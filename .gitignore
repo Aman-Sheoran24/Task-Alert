@@ -1,0 +1,12 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Dependencies (none needed — app is a single static file)
+node_modules/
+
+# Vercel
+.vercel/
