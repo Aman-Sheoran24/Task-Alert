@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Matrix</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      padding: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .header { text-align: center; margin-bottom: 10px; padding-top: 4px; }
+    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .header p { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* Google Calendar connection bar */
+    .gcal-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      background: #fff; border: 1px solid #e3e6ea; border-radius: 8px;
+      padding: 8px 10px; margin-bottom: 10px; font-size: 11px;
+    }
+    .gcal-status { color: #666; flex: 1; min-width: 0; line-height: 1.3; }
+    .gcal-status.on { color: #1a7f37; font-weight: 600; }
+    .gcal-status.err { color: #c0392b; }
+    .gcal-bar button {
+      border: none; background: #4285F4; color: #fff; padding: 7px 11px;
+      border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+    }
+    .gcal-bar button:active { opacity: 0.8; }
+    .gcal-bar button:disabled { background: #bbb; cursor: default; }
+
+    .input-row { display: flex; gap: 6px; margin-bottom: 12px; }
+    .input-row input {
+      flex: 1; min-width: 0;
+      padding: 11px 12px;
+      border: 1px solid #ddd; border-radius: 8px;
+      font-size: 14px; background: white; outline: none;
+    }
+    .input-row input:focus { border-color: #aaa; }
+    .icon-btn {
+      padding: 11px 13px; border: none; border-radius: 8px;
+      font-size: 16px; cursor: pointer; flex-shrink: 0;
+    }
+    .icon-btn:active { opacity: 0.7; }
+    .btn-add   { background: #2ecc71; color: white; }
+    .btn-voice { background: #2c3e50; color: white; }
+    .btn-voice.on { background: #e74c3c; }
+
+    /* Matrix */
+    .matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .quadrant {
+      border-radius: 10px; padding: 10px;
+      display: flex; flex-direction: column;
+      border-left: 4px solid; min-height: 170px;
+      transition: transform 0.12s, opacity 0.12s;
+    }
+    .quadrant.drag-over {
+      transform: scale(0.97); opacity: 0.75;
+      outline: 2px dashed #aaa; outline-offset: -2px;
+    }
+
+    .q-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .q-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .q-count { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; background: rgba(0,0,0,0.1); }
+
+    .q1 { border-color: #e74c3c; background: #fdedec; }
+    .q1 .q-label { color: #922b21; }
+    .q2 { border-color: #e67e22; background: #fef5ec; }
+    .q2 .q-label { color: #935116; }
+    .q3 { border-color: #27ae60; background: #eafaf1; }
+    .q3 .q-label { color: #1a5276; }
+    .q4 { border-color: #95a5a6; background: #f2f3f4; }
+    .q4 .q-label { color: #616a6b; }
+
+    /* Task list */
+    .task-list { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .empty-msg { color: #ccc; font-size: 12px; text-align: center; padding: 16px 0; }
+
+    /* Task card */
+    .task {
+      background: white; border-radius: 6px; padding: 8px;
+      font-size: 13px; border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      user-select: none; touch-action: manipulation;
+    }
+    .task.dragging { opacity: 0.35; }
+    .task.done .task-text { text-decoration: line-through; color: #aaa; }
+
+    /* Braille-style drag handle */
+    .task-handle {
+      color: #ccc; font-size: 12px; cursor: grab;
+      display: block; margin-bottom: 3px; letter-spacing: 1px;
+    }
+
+    .task-text { line-height: 1.4; margin-bottom: 5px; word-break: break-word; }
+
+    .task-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; margin-right: 4px;
+    }
+    .overdue { background: #e74c3c; color: white; }
+    .soon    { background: #f39c12; color: white; }
+    .later   { background: #3498db; color: white; }
+    .alarm   { background: #6c5ce7; color: white; }
+
+    .task-actions { display: flex; gap: 4px; }
+    .task-btn {
+      flex: 1; padding: 4px; font-size: 12px;
+      border: 1px solid #eee; border-radius: 4px;
+      background: #fafafa; cursor: pointer;
+    }
+    .task-btn:hover, .task-btn:active { background: #efefef; }
+    .task-btn.green { color: #27ae60; border-color: #a9dfbf; }
+    .task-btn.red   { color: #e74c3c; }
+
+    /* Edit mode */
+    .task-edit {
+      width: 100%; padding: 5px; border: 1.5px solid #3498db; border-radius: 4px;
+      font-size: 13px; font-family: inherit; resize: none; outline: none;
+      margin-bottom: 5px; line-height: 1.4;
+    }
+
+    /* Touch drag ghost */
+    .drag-ghost {
+      position: fixed; pointer-events: none; z-index: 9999;
+      background: white; padding: 8px 10px; border-radius: 8px;
+      font-size: 13px; line-height: 1.4; max-width: 150px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      transform: translateX(-50%) rotate(2deg);
+      opacity: 0.92; word-break: break-word;
+    }
+
+    /* Status */
+    .status { font-size: 11px; color: #aaa; text-align: center; margin-top: 8px; min-height: 18px; }
+
+    /* Modal */
+    .modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45); z-index: 500;
+      align-items: center; justify-content: center;
+    }
+    .modal.show { display: flex; }
+    .modal-box { background: white; border-radius: 14px; padding: 20px; width: 88%; max-width: 340px; }
+    .modal-box h3 { font-size: 15px; margin-bottom: 14px; }
+    .modal-box label { font-size: 12px; color: #888; display: block; margin-bottom: 4px; }
+    .modal-box input {
+      width: 100%; padding: 10px; margin-bottom: 14px;
+      border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none;
+    }
+    .modal-box input:focus { border-color: #aaa; }
+    .modal-btns { display: flex; gap: 8px; }
+    .modal-btns button {
+      flex: 1; padding: 10px; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .m-set  { background: #2ecc71; color: white; }
+    .m-skip { background: #ecf0f1; color: #555; font-weight: 400; }
+
+    @media (max-width: 440px) {
+      .matrix { grid-template-columns: 1fr; }
+      .quadrant { min-height: 120px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Task Matrix</h1>
+  <p>Urgent–Important Prioritization</p>
+</div>
+
+<!-- Google Calendar connection -->
+<div class="gcal-bar">
+  <span class="gcal-status" id="gcalStatus">Calendar alerts: off</span>
+  <button id="gcalBtn" disabled>Connect Google Calendar</button>
+</div>
+
+<div class="input-row">
+  <input id="taskInput" type="text" placeholder="Add a task…" autocomplete="off" autocorrect="off">
+  <button class="icon-btn btn-add" id="addBtn" title="Add task">＋</button>
+  <button class="icon-btn btn-voice" id="voiceBtn" title="Voice input">🎤</button>
+</div>
+
+<div class="matrix">
+  <div class="quadrant q1" id="qc1">
+    <div class="q-header">
+      <span class="q-label">Urgent + Important</span>
+      <span class="q-count" id="cnt1">0</span>
+    </div>
+    <div class="task-list" id="q1" data-quad="1"></div>
+  </div>
+  <div class="quadrant q2" id="qc2">
+    <div class="q-header">
+      <span class="q-label">Urgent, not important</span>
+      <span class="q-count" id="cnt2">0</span>
+    </div>
+    <div class="task-list" id="q2" data-quad="2"></div>
+  </div>
+  <div class="quadrant q3" id="qc3">
+    <div class="q-header">
+      <span class="q-label">Important, not urgent</span>
+      <span class="q-count" id="cnt3">0</span>
+    </div>
+    <div class="task-list" id="q3" data-quad="3"></div>
+  </div>
+  <div class="quadrant q4" id="qc4">
+    <div class="q-header">
+      <span class="q-label">Neither</span>
+      <span class="q-count" id="cnt4">0</span>
+    </div>
+    <div class="task-list" id="q4" data-quad="4"></div>
+  </div>
+</div>
+
+<div class="status" id="status"></div>
+
+<div class="modal" id="dlModal">
+  <div class="modal-box">
+    <h3>Set a deadline? (optional)</h3>
+    <label>Date & time</label>
+    <input type="datetime-local" id="dlInput">
+    <div class="modal-btns">
+      <button class="m-set"  id="dlConfirm">Set deadline</button>
+      <button class="m-skip" id="dlSkip">Skip</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════════════════
+   CONFIG — edit these three lines, then deploy.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+// Paste the OAuth Client ID you create in Google Cloud (see README). NOT a secret.
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
+
+// Your timezone, and the hour for the daily review (24h clock, local time).
+const CAL_TIMEZONE = 'Asia/Kolkata';
+const DAILY_HOUR   = 10;   // 10 = 10:00 AM
+
+// Deadline reminders, in minutes before the deadline.
+const REMIND_5H = 300;     // 5 hours
+const REMIND_2H = 120;     // 2 hours
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+
+// ─── Data ────────────────────────────────────────────────────────────────────
+let tasks = JSON.parse(localStorage.getItem('tm_tasks') || '[]');
+
+// ─── UI refs ─────────────────────────────────────────────────────────────────
+const taskInput  = document.getElementById('taskInput');
+const addBtn     = document.getElementById('addBtn');
+const voiceBtn   = document.getElementById('voiceBtn');
+const dlModal    = document.getElementById('dlModal');
+const dlInput    = document.getElementById('dlInput');
+const statusEl   = document.getElementById('status');
+const gcalBtn    = document.getElementById('gcalBtn');
+const gcalStatus = document.getElementById('gcalStatus');
+
+// ─── App state ───────────────────────────────────────────────────────────────
+let editingId   = null;
+let pendingText = '';
+
+// ─── Drag state ──────────────────────────────────────────────────────────────
+let dragId       = null;
+let ghost        = null;
+let dropQuad     = null;
+let touchTimer   = null;
+let touchOriginX = 0;
+let touchOriginY = 0;
+
+// ─── Google Calendar state ─────────────────────────────────────────────────────
+let tokenClient   = null;
+let accessToken   = null;
+let gcalConnected = false;
+let syncTimer     = null;
+
+// ─── Google Drive sync state ───────────────────────────────────────────────────
+const DRIVE_FILE_NAME = 'task-matrix.json';
+let driveFileId       = localStorage.getItem('tm_drive_file') || null;  // id of the appData file
+let driveModifiedSeen = localStorage.getItem('tm_drive_mtime') || null; // last modifiedTime we merged
+
+// Called by the Google Identity Services script once it has loaded.
+function initGis() {
+  if (GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR_CLIENT_ID') === 0) {
+    setGcalStatus('Add your Google Client ID in index.html to enable alerts', 'err');
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    // calendar.events = create/update reminder events; drive.appdata = a hidden,
+    // app-private file in the user's Drive that holds the task list (cross-device sync).
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata',
+    callback: (resp) => {
+      if (resp && resp.access_token) {
+        accessToken = resp.access_token;
+        gcalConnected = true;
+        updateGcalUI();
+        onConnected();
+      } else {
+        setGcalStatus('Could not connect to Google', 'err');
+      }
+    },
+  });
+  gcalBtn.disabled = false;
+  updateGcalUI();
+}
+
+gcalBtn.addEventListener('click', () => {
+  if (!tokenClient) return;
+  // 'consent' the first time so the permission screen shows; '' = silent reconnect.
+  tokenClient.requestAccessToken({ prompt: gcalConnected ? '' : 'consent' });
+});
+
+function updateGcalUI() {
+  if (gcalConnected) {
+    gcalBtn.textContent = 'Re-sync';
+    setGcalStatus('Calendar alerts: on', 'on');
+  } else {
+    gcalBtn.textContent = 'Connect Google Calendar';
+    setGcalStatus('Calendar alerts: off');
+  }
+}
+
+function setGcalStatus(text, cls) {
+  gcalStatus.textContent = text;
+  gcalStatus.className = 'gcal-status' + (cls ? ' ' + cls : '');
+}
+
+// Low-level Google Calendar REST call.
+async function gcal(method, path, body) {
+  const r = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+    method,
+    headers: {
+      Authorization: 'Bearer ' + accessToken,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (r.status === 401) {            // token expired
+    gcalConnected = false;
+    accessToken = null;
+    updateGcalUI();
+    setGcalStatus('Google session expired — tap Connect again', 'err');
+    throw new Error('expired');
+  }
+  if (r.status === 204) return null; // e.g. successful DELETE
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + r.status));
+  return data;
+}
+
+// Low-level Google Drive REST call. `url` is a full Drive API URL. Returns parsed
+// JSON, or the raw text when raw=true (used to download the task-list file).
+// Same Bearer auth + 401→expired handling as gcal().
+async function drive(method, url, body, raw) {
+  const headers = { Authorization: 'Bearer ' + accessToken };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const r = await fetch(url, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (r.status === 401) {            // token expired
+    gcalConnected = false;
+    accessToken = null;
+    updateGcalUI();
+    setGcalStatus('Google session expired — tap Connect again', 'err');
+    throw new Error('expired');
+  }
+  if (r.status === 204) return null;
+  const text = await r.text();
+  if (!r.ok) {
+    let msg = 'HTTP ' + r.status;
+    try { msg = JSON.parse(text).error.message || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  if (raw) return text;
+  return text ? JSON.parse(text) : null;
+}
+
+// Find (or lazily create) the hidden appData file that stores the task list.
+async function ensureDriveFile() {
+  if (driveFileId) return driveFileId;
+  const q = encodeURIComponent("name='" + DRIVE_FILE_NAME + "'");
+  const list = await drive('GET',
+    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q=' + q);
+  if (list && list.files && list.files.length) {
+    driveFileId = list.files[0].id;
+  } else {
+    const meta = await drive('POST', 'https://www.googleapis.com/drive/v3/files',
+      { name: DRIVE_FILE_NAME, parents: ['appDataFolder'] });
+    driveFileId = meta.id;
+  }
+  localStorage.setItem('tm_drive_file', driveFileId);
+  return driveFileId;
+}
+
+// Union two task lists by id; for the same id keep the newer (larger updatedAt)
+// record. eventId rides along, so a second device reuses the calendar event
+// instead of duplicating it. Tombstones (deleted:true) are kept so deletes
+// propagate; they're filtered out at render time.
+function mergeTasks(a, b) {
+  const byId = new Map();
+  for (const t of a.concat(b)) {
+    if (!t || t.id == null) continue;
+    const prev = byId.get(t.id);
+    if (!prev || (t.updatedAt || 0) >= (prev.updatedAt || 0)) byId.set(t.id, t);
+  }
+  return Array.from(byId.values());
+}
+
+// Pull the task list from Drive and merge it into local state. Cheap-checks
+// modifiedTime first so a no-op focus doesn't re-download or re-render.
+async function loadFromDrive() {
+  if (!gcalConnected || !accessToken) return;
+  const id = await ensureDriveFile();
+
+  const meta = await drive('GET',
+    'https://www.googleapis.com/drive/v3/files/' + id + '?fields=modifiedTime');
+  const mtime = meta && meta.modifiedTime;
+  if (mtime && mtime === driveModifiedSeen) return;  // already merged this version
+
+  const text = await drive('GET',
+    'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media', undefined, true);
+  let remote = [];
+  if (text) { try { remote = JSON.parse(text) || []; } catch (_) { remote = []; } }
+  if (Array.isArray(remote) && remote.length) {
+    tasks = mergeTasks(tasks, remote);
+    localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+    render();
+  }
+  if (mtime) { driveModifiedSeen = mtime; localStorage.setItem('tm_drive_mtime', mtime); }
+}
+
+// Write the current task list to Drive and remember the resulting modifiedTime
+// (so the next focus-pull doesn't re-download our own write).
+async function saveToDrive() {
+  if (!gcalConnected || !accessToken) return;
+  const id = await ensureDriveFile();
+  const meta = await drive('PATCH',
+    'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media&fields=modifiedTime',
+    tasks);
+  if (meta && meta.modifiedTime) {
+    driveModifiedSeen = meta.modifiedTime;
+    localStorage.setItem('tm_drive_mtime', meta.modifiedTime);
+  }
+}
+
+// Event body for a single task's deadline (absolute UTC instant + 5h/2h reminders).
+function taskEventBody(t) {
+  const startMs = t.deadline;
+  return {
+    summary: '⏰ ' + t.text,
+    description: 'Deadline reminder from Task Matrix.',
+    start: { dateTime: new Date(startMs).toISOString() },
+    end:   { dateTime: new Date(startMs + 30 * 60000).toISOString() },
+    reminders: {
+      useDefault: false,
+      overrides: [
+        { method: 'popup', minutes: REMIND_5H },
+        { method: 'popup', minutes: REMIND_2H },
+      ],
+    },
+  };
+}
+
+// Recurring daily review event at DAILY_HOUR, description lists current Q1 tasks.
+function dailyEventBody() {
+  const q1 = tasks.filter(t => !t.done && !t.deleted && t.quad === 1);
+  const desc = q1.length
+    ? 'Urgent + Important right now:\n' + q1.map((t, i) => `${i + 1}. ${t.text}`).join('\n')
+    : 'No Urgent + Important tasks right now. Enjoy a focused day.';
+
+  const d = new Date();
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hh = pad(DAILY_HOUR);
+
+  return {
+    summary: '🔴 Urgent + Important — daily review',
+    description: desc,
+    start: { dateTime: `${date}T${hh}:00:00`, timeZone: CAL_TIMEZONE },
+    end:   { dateTime: `${date}T${hh}:15:00`, timeZone: CAL_TIMEZONE },
+    recurrence: ['RRULE:FREQ=DAILY'],
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] },
+  };
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+// Reconcile every task and the daily event with Google Calendar.
+async function syncCalendar() {
+  if (!gcalConnected || !accessToken) return;
+  setGcalStatus('Syncing…', 'on');
+
+  try {
+    for (const t of tasks) {
+      const wantEvent = !t.deleted && !t.done && !!t.deadline;
+
+      if (wantEvent && !t.eventId) {
+        const ev = await gcal('POST', '/calendars/primary/events', taskEventBody(t));
+        t.eventId = ev.id;
+      } else if (wantEvent && t.eventId) {
+        try {
+          await gcal('PUT', '/calendars/primary/events/' + t.eventId, taskEventBody(t));
+        } catch (e) {
+          if (e.message === 'expired') throw e;
+          // Event was deleted in Calendar — recreate it.
+          const ev = await gcal('POST', '/calendars/primary/events', taskEventBody(t));
+          t.eventId = ev.id;
+        }
+      } else if (!wantEvent && t.eventId) {
+        try { await gcal('DELETE', '/calendars/primary/events/' + t.eventId); }
+        catch (e) { if (e.message === 'expired') throw e; }
+        t.eventId = null;
+      }
+    }
+
+    await syncDailyEvent();
+    localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+    setGcalStatus('Alerts on · synced ' + new Date().toLocaleTimeString(), 'on');
+  } catch (e) {
+    if (e.message !== 'expired') setGcalStatus('Sync error: ' + e.message, 'err');
+    // Whatever event IDs we did get are saved so we don't duplicate next time.
+    localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+  }
+}
+
+async function syncDailyEvent() {
+  const body = dailyEventBody();
+  const id = localStorage.getItem('tm_daily_event');
+  if (id) {
+    try {
+      await gcal('PUT', '/calendars/primary/events/' + id, body);
+      return;
+    } catch (e) {
+      if (e.message === 'expired') throw e;
+      // fall through and recreate
+    }
+  }
+  const ev = await gcal('POST', '/calendars/primary/events', body);
+  localStorage.setItem('tm_daily_event', ev.id);
+}
+
+// Reconcile calendar, then push the (event-id-stamped) task list to Drive.
+async function syncAll() {
+  await syncCalendar();
+  if (!gcalConnected) return;        // syncCalendar may have hit 'expired'
+  try {
+    await saveToDrive();
+    setGcalStatus('Synced · tasks + alerts ' + new Date().toLocaleTimeString(), 'on');
+  } catch (e) {
+    if (e.message !== 'expired') setGcalStatus('Drive sync error: ' + e.message, 'err');
+  }
+}
+
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncAll, 800);
+}
+
+// Runs once a token arrives: pull tasks from Drive, then reconcile + push back.
+async function onConnected() {
+  try {
+    await loadFromDrive();
+  } catch (e) {
+    if (e.message !== 'expired') setGcalStatus('Drive load error: ' + e.message, 'err');
+  }
+  syncAll();
+}
+
+// When the tab regains focus, pull any changes made on another device. The
+// modifiedTime check inside loadFromDrive() makes a no-op pull cheap.
+function pullOnFocus() {
+  if (gcalConnected) loadFromDrive().catch(e => {
+    if (e.message !== 'expired') setGcalStatus('Drive load error: ' + e.message, 'err');
+  });
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') pullOnFocus();
+});
+window.addEventListener('focus', pullOnFocus);
+
+// ─── Voice ───────────────────────────────────────────────────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recActive = false;
+
+if (SR) {
+  rec = new SR();
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.lang = 'en-US';
+  rec.onstart  = () => { recActive = true;  voiceBtn.classList.add('on'); voiceBtn.textContent = '🛑'; };
+  rec.onend    = () => { recActive = false; voiceBtn.classList.remove('on'); voiceBtn.textContent = '🎤'; };
+  rec.onresult = e => { taskInput.value = Array.from(e.results).map(r => r[0].transcript).join(' ').trim(); };
+  rec.onerror  = () => flash('Voice failed — type instead');
+  voiceBtn.addEventListener('click', () => recActive ? rec.stop() : (taskInput.value = '', rec.start()));
+} else {
+  voiceBtn.style.display = 'none';
+}
+
+// ─── Add task flow ────────────────────────────────────────────────────────────
+function openAddFlow() {
+  const text = taskInput.value.trim();
+  if (!text) { taskInput.focus(); return; }
+  pendingText = text;
+  taskInput.value = '';
+  dlInput.value = '';
+  dlModal.classList.add('show');
+  setTimeout(() => dlInput.focus(), 60);
+}
+
+addBtn.addEventListener('click', openAddFlow);
+taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') openAddFlow(); });
+
+document.getElementById('dlConfirm').addEventListener('click', () => {
+  const dl = dlInput.value ? new Date(dlInput.value).getTime() : null;
+  commitAdd(pendingText, dl);
+  dlModal.classList.remove('show');
+});
+
+document.getElementById('dlSkip').addEventListener('click', () => {
+  commitAdd(pendingText, null);
+  dlModal.classList.remove('show');
+});
+
+dlInput.addEventListener('focus', () => {
+  if (!dlInput.value) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    dlInput.value = d.toISOString().slice(0, 16);
+  }
+});
+
+function commitAdd(text, deadline) {
+  const q = classify(text, deadline);
+  tasks.push({ id: Date.now(), text, quad: q, done: false, deadline: deadline || null, eventId: null, updatedAt: Date.now() });
+  persist();
+  render();
+  const names = ['Urgent + Important', 'Urgent', 'Important', 'Neither'];
+  flash(`Added to "${names[q - 1]}"`, 2200);
+}
+
+// ─── Edit ─────────────────────────────────────────────────────────────────────
+function startEdit(id) {
+  editingId = id;
+  render();
+  const el = document.querySelector(`[data-edit="${id}"]`);
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+function commitEdit(id) {
+  const el  = document.querySelector(`[data-edit="${id}"]`);
+  const txt = el?.value.trim();
+  if (txt) {
+    const t = find(id);
+    if (t) { t.text = txt; t.updatedAt = Date.now(); }
+    persist();
+  }
+  editingId = null;
+  render();
+}
+
+function cancelEdit() { editingId = null; render(); }
+
+// ─── Task actions ─────────────────────────────────────────────────────────────
+// Soft-delete: keep a tombstone so the deletion syncs to other devices (and the
+// calendar event gets removed on the next sync). Filtered out at render time.
+function deleteTask(id) { const t = find(id); if (t) { t.deleted = true; t.updatedAt = Date.now(); persist(); render(); } }
+function toggleDone(id) { const t = find(id); if (t) { t.done = !t.done; t.updatedAt = Date.now(); persist(); render(); } }
+function moveTask(id, q) { const t = find(id); if (t && t.quad !== q) { t.quad = q; t.updatedAt = Date.now(); persist(); render(); } }
+
+function find(id) { return tasks.find(t => t.id === id); }
+
+// ─── Persistence ───────────────────────────────────────────────────────────────
+// Save locally (instant), then reconcile Google Calendar if connected.
+function persist() {
+  localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+  if (gcalConnected) scheduleSync();
+}
+
+// ─── Classification ───────────────────────────────────────────────────────────
+function classify(text, deadline) {
+  const t = text.toLowerCase();
+  const urgent = /urgent|asap|today|deadline|rush|critical|emergency|now|immediately/i.test(t);
+  const imp    = /important|goal|project|strategy|health|family|career|learning|growth|key/i.test(t);
+
+  if (deadline) {
+    const h = (deadline - Date.now()) / 3600000;
+    if (h < 24) return imp ? 1 : 2;
+    if (h < 72) return 1;
+  }
+
+  if (urgent && imp) return 1;
+  if (urgent)        return 2;
+  if (imp)           return 3;
+  return 4;
+}
+
+function deadlineBadge(t) {
+  if (!t.deadline) return '';
+  const ms = t.deadline - Date.now();
+  let text, cls;
+  if (ms < 0) {
+    text = 'Overdue'; cls = 'overdue';
+  } else {
+    const h = ms / 3600000;
+    if (h < 1)        { text = Math.round(ms / 60000) + 'm left'; cls = 'overdue'; }
+    else if (h < 24)  { text = Math.round(h) + 'h left'; cls = 'overdue'; }
+    else { const d = Math.round(h / 24); text = d + 'd left'; cls = d < 3 ? 'soon' : 'later'; }
+  }
+  // Small badge showing a calendar alarm is set for this task.
+  const alarm = (!t.done && t.eventId) ? '<span class="task-badge alarm">⏰ alert set</span>' : '';
+  return `<span class="task-badge ${cls}">${text}</span>${alarm}`;
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  for (let q = 1; q <= 4; q++) {
+    const list = tasks.filter(t => t.quad === q && !t.deleted);
+    const el   = document.getElementById('q' + q);
+    document.getElementById('cnt' + q).textContent = list.filter(t => !t.done).length;
+
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-msg">—</div>';
+    } else {
+      el.innerHTML = list.map(taskCard).join('');
+
+      el.querySelectorAll('.task[draggable]').forEach(node => {
+        node.addEventListener('dragstart', onDragStart);
+        node.addEventListener('dragend',   onDragEnd);
+      });
+
+      el.querySelectorAll('.task[data-id]').forEach(node => {
+        node.addEventListener('touchstart', onTouchStart, { passive: true });
+      });
+
+      el.querySelectorAll('[data-edit]').forEach(node => {
+        node.addEventListener('keydown', e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(editingId); }
+          if (e.key === 'Escape') cancelEdit();
+        });
+      });
+    }
+  }
+  updateStatus();
+}
+
+function taskCard(t) {
+  if (editingId === t.id) {
+    return `
+      <div class="task" data-id="${t.id}">
+        <textarea class="task-edit" data-edit="${t.id}" rows="2">${esc(t.text)}</textarea>
+        <div class="task-actions">
+          <button class="task-btn green" onclick="commitEdit(${t.id})">Save</button>
+          <button class="task-btn" onclick="cancelEdit()">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="task ${t.done ? 'done' : ''}" draggable="true" data-id="${t.id}">
+      <span class="task-handle" title="Hold to drag">⠿⠿</span>
+      <div class="task-text">${esc(t.text)}</div>
+      ${deadlineBadge(t)}
+      <div class="task-actions">
+        <button class="task-btn ${t.done ? '' : 'green'}" onclick="toggleDone(${t.id})">${t.done ? '↩' : '✓'}</button>
+        <button class="task-btn" onclick="startEdit(${t.id})">✏</button>
+        <button class="task-btn red" onclick="deleteTask(${t.id})">✕</button>
+      </div>
+    </div>`;
+}
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ─── Mouse drag ─────────────────────────────────────────────────────────────
+function onDragStart(e) {
+  dragId = this.dataset.id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => this.classList.add('dragging'), 0);
+}
+
+function onDragEnd() {
+  this.classList.remove('dragging');
+  clearHighlight();
+}
+
+document.querySelectorAll('.task-list').forEach(zone => {
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    zone.closest('.quadrant').classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', e => {
+    if (!zone.closest('.quadrant').contains(e.relatedTarget)) {
+      zone.closest('.quadrant').classList.remove('drag-over');
+    }
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    clearHighlight();
+    if (dragId) { moveTask(parseInt(dragId), parseInt(zone.dataset.quad)); dragId = null; }
+  });
+});
+
+function clearHighlight() {
+  document.querySelectorAll('.quadrant').forEach(q => q.classList.remove('drag-over'));
+}
+
+// ─── Touch drag ───────────────────────────────────────────────────────────────
+function onTouchStart(e) {
+  if (e.target.closest('button, textarea')) return;
+  const taskEl = this;
+  const touch  = e.touches[0];
+  touchOriginX = touch.clientX;
+  touchOriginY = touch.clientY;
+
+  touchTimer = setTimeout(() => {
+    dragId = taskEl.dataset.id;
+    taskEl.classList.add('dragging');
+
+    ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.textContent = taskEl.querySelector('.task-text')?.textContent || '';
+    document.body.appendChild(ghost);
+    placeGhost(touchOriginX, touchOriginY);
+  }, 300);
+}
+
+document.addEventListener('touchmove', e => {
+  if (touchTimer) {
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - touchOriginX) > 8 || Math.abs(t.clientY - touchOriginY) > 8) {
+      clearTimeout(touchTimer);
+      touchTimer = null;
+    }
+  }
+
+  if (!ghost || !dragId) return;
+  e.preventDefault();
+
+  const { clientX, clientY } = e.touches[0];
+  placeGhost(clientX, clientY);
+
+  ghost.style.visibility = 'hidden';
+  const hit = document.elementFromPoint(clientX, clientY);
+  ghost.style.visibility = '';
+
+  clearHighlight();
+  const quad = hit?.closest('.quadrant');
+  if (quad) { quad.classList.add('drag-over'); dropQuad = quad; }
+  else dropQuad = null;
+
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  clearTimeout(touchTimer); touchTimer = null;
+
+  if (ghost) { ghost.remove(); ghost = null; }
+  document.querySelectorAll('.task').forEach(t => t.classList.remove('dragging'));
+  clearHighlight();
+
+  if (dragId && dropQuad) {
+    const zone = dropQuad.querySelector('.task-list');
+    if (zone) moveTask(parseInt(dragId), parseInt(zone.dataset.quad));
+  }
+
+  dragId = null; dropQuad = null;
+});
+
+function placeGhost(x, y) {
+  if (!ghost) return;
+  ghost.style.left = x + 'px';
+  ghost.style.top  = (y - 60) + 'px';
+}
+
+// ─── Status helpers ───────────────────────────────────────────────────────────
+let flashTimer = null;
+
+function flash(msg, ms = 2000) {
+  statusEl.textContent = msg;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(updateStatus, ms);
+}
+
+function updateStatus() {
+  const n = tasks.filter(t => !t.done && !t.deleted).length;
+  statusEl.textContent = n ? `${n} active task${n === 1 ? '' : 's'}` : 'All clear ✓';
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+render();
+taskInput.focus();
+</script>
+
+<!-- Google Identity Services. initGis() runs once this loads. -->
+<script src="https://accounts.google.com/gsi/client" onload="initGis()" async defer></script>
+
+</body>
+</html>
