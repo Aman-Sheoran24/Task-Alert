@@ -162,6 +162,88 @@
     .m-set  { background: #2ecc71; color: white; }
     .m-skip { background: #ecf0f1; color: #555; font-weight: 400; }
 
+    /* ── Completed-task log ───────────────────────────────────────── */
+    .log-section {
+      background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+      padding: 10px; margin-top: 12px;
+    }
+    .log-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .log-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .log-title .log-count { background: rgba(0,0,0,0.1); border-radius: 9px; padding: 1px 6px; margin-left: 4px; font-size: 10px; }
+    .log-clear { border: none; background: #f2f3f4; color: #888; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+    .log-clear:active { opacity: 0.7; }
+    .log-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .log-item { border: 1px solid #eee; border-radius: 8px; padding: 7px 9px; background: #fafbfc; }
+    .log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .log-when { font-size: 10px; color: #aaa; margin-left: auto; }
+    .log-text { font-size: 13px; color: #444; word-break: break-word; }
+    .log-detail { font-size: 11px; color: #777; margin-top: 3px; line-height: 1.35; }
+    .log-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; color: #fff; }
+    .log-badge.done   { background: #16a085; }
+    .log-badge.ontime { background: #27ae60; }
+    .log-badge.late   { background: #e74c3c; }
+    .log-reopen { background: none; border: none; color: #3498db; font-size: 11px; cursor: pointer; padding: 2px 0; margin-top: 4px; }
+
+    /* ── Fast-reading launcher ────────────────────────────────────── */
+    .read-launch {
+      width: 100%; margin-top: 12px; padding: 11px;
+      border: none; border-radius: 10px; background: #34495e; color: #fff;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .read-launch:active { opacity: 0.85; }
+
+    /* ── Fast-reading (RSVP) modal ────────────────────────────────── */
+    .read-box { max-width: 460px; width: 92%; max-height: 92vh; overflow-y: auto; }
+    .read-box h3 { display: flex; align-items: center; justify-content: space-between; }
+    .read-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; line-height: 1; }
+    .read-lib-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .read-lib-row select { flex: 1; min-width: 0; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; }
+    .read-lib-row button { border: none; border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; background: #ecf0f1; color: #444; }
+    .read-title-input { width: 100%; padding: 9px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; margin-bottom: 6px; }
+    .read-text { width: 100%; min-height: 90px; padding: 9px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; line-height: 1.4; resize: vertical; margin-bottom: 6px; }
+    .read-save-row { display: flex; gap: 6px; margin-bottom: 12px; }
+    .read-save-row button { flex: 1; border: none; border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .read-save  { background: #2ecc71; color: #fff; }
+    .read-del   { background: #f8d7da; color: #c0392b; }
+
+    /* The fixed-point word display */
+    .rsvp-stage {
+      background: #1c2530; border-radius: 12px; padding: 26px 10px; margin-bottom: 6px;
+      position: relative; overflow: hidden;
+    }
+    .rsvp-guide { position: absolute; left: 50%; width: 1px; background: rgba(255,255,255,0.18); }
+    .rsvp-guide.top { top: 6px; height: 16px; }
+    .rsvp-guide.bot { bottom: 6px; height: 16px; }
+    .rsvp-word {
+      display: flex; align-items: baseline; justify-content: center;
+      font-size: 30px; font-weight: 600; color: #f5f6fa;
+      font-family: 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.5px;
+      min-height: 40px;
+    }
+    .rsvp-word .l { flex: 1; text-align: right; white-space: pre; }
+    .rsvp-word .r { flex: 1; text-align: left;  white-space: pre; }
+    .rsvp-word .p { color: #ff5252; padding: 0 1px; }
+    .rsvp-idle { color: #7f8c9b; font-size: 15px; font-weight: 400; }
+
+    .rsvp-progress { height: 5px; background: #e6e9ec; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+    .rsvp-bar { height: 100%; width: 0%; background: #3498db; transition: width 0.08s linear; }
+    .rsvp-meta { display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 10px; }
+
+    .rsvp-speed { margin-bottom: 8px; }
+    .rsvp-speed label { font-size: 12px; color: #666; display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .rsvp-speed input[type=range] { width: 100%; }
+    .rsvp-presets { display: flex; gap: 5px; margin-top: 6px; }
+    .rsvp-presets button { flex: 1; border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 5px; font-size: 11px; cursor: pointer; color: #555; }
+    .rsvp-presets button.active { background: #3498db; color: #fff; border-color: #3498db; }
+
+    .rsvp-controls { display: flex; gap: 6px; }
+    .rsvp-controls button { flex: 1; border: none; border-radius: 8px; padding: 11px; font-size: 16px; cursor: pointer; background: #ecf0f1; color: #333; }
+    .rsvp-controls button.play { background: #2ecc71; color: #fff; flex: 2; }
+    .rsvp-controls button:active { opacity: 0.8; }
+
     @media (max-width: 440px) {
       .matrix { grid-template-columns: 1fr; }
       .quadrant { min-height: 120px; }
@@ -220,6 +302,18 @@
 
 <div class="status" id="status"></div>
 
+<!-- Completed-task activity log -->
+<div class="log-section" id="logSection">
+  <div class="log-head">
+    <span class="log-title">Activity log<span class="log-count" id="logCount">0</span></span>
+    <button class="log-clear" id="logClear">Clear completed</button>
+  </div>
+  <div class="log-list" id="logList"></div>
+</div>
+
+<!-- Fast-reading launcher -->
+<button class="read-launch" id="readLaunch">📖 Fast Reading practice</button>
+
 <div class="modal" id="dlModal">
   <div class="modal-box">
     <h3>Set a deadline? (optional)</h3>
@@ -228,6 +322,55 @@
     <div class="modal-btns">
       <button class="m-set"  id="dlConfirm">Set deadline</button>
       <button class="m-skip" id="dlSkip">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fast Reading (RSVP) modal -->
+<div class="modal" id="readModal">
+  <div class="modal-box read-box">
+    <h3>Fast Reading <button class="read-close" id="readClose">&times;</button></h3>
+
+    <!-- Library (the "custom database" of saved passages) -->
+    <label>Your library</label>
+    <div class="read-lib-row">
+      <select id="readLib"></select>
+      <button id="readNew" title="New passage">＋ New</button>
+    </div>
+
+    <input class="read-title-input" id="readTitle" type="text" placeholder="Passage title (e.g. Article 1)" autocomplete="off">
+    <textarea class="read-text" id="readContent" placeholder="Paste or type the text you want to speed-read here…"></textarea>
+    <div class="read-save-row">
+      <button class="read-save" id="readSave">Save passage</button>
+      <button class="read-del"  id="readDelete">Delete</button>
+    </div>
+
+    <!-- The fixed-point reader -->
+    <div class="rsvp-stage">
+      <span class="rsvp-guide top"></span>
+      <span class="rsvp-guide bot"></span>
+      <div class="rsvp-word" id="rsvpWord"><span class="rsvp-idle">Press play to begin</span></div>
+    </div>
+    <div class="rsvp-progress"><div class="rsvp-bar" id="rsvpBar"></div></div>
+    <div class="rsvp-meta"><span id="rsvpPos">0 / 0 words</span><span id="rsvpEta"></span></div>
+
+    <div class="rsvp-speed">
+      <label>Speed <span id="rsvpWpmLabel">300 WPM</span></label>
+      <input type="range" id="rsvpWpm" min="100" max="800" step="25" value="300">
+      <div class="rsvp-presets" id="rsvpPresets">
+        <button data-wpm="200">200</button>
+        <button data-wpm="300">300</button>
+        <button data-wpm="400">400</button>
+        <button data-wpm="500">500</button>
+        <button data-wpm="600">600</button>
+      </div>
+    </div>
+
+    <div class="rsvp-controls">
+      <button id="rsvpPrev" title="Back 10 words">⏮</button>
+      <button class="play" id="rsvpPlay">▶ Play</button>
+      <button id="rsvpNext" title="Forward 10 words">⏭</button>
+      <button id="rsvpReset" title="Restart">⟳</button>
     </div>
   </div>
 </div>
@@ -283,6 +426,14 @@ let accessToken   = null;
 let gcalConnected = false;
 let syncTimer     = null;
 
+// "Remember me" state. Once you've connected on this device, we stash a flag and
+// then try to get fresh tokens SILENTLY (no popup, no consent screen) on every
+// later visit. Google only re-prompts if your Google session itself has lapsed.
+const GCAL_REMEMBER_KEY     = 'tm_gcal_remember';
+let   silentReauth          = false;   // a silent (prompt:'') request is in flight
+let   suppressSyncOnToken   = false;   // token arrived from a background refresh only
+let   refreshTimer          = null;    // periodic silent-refresh interval
+
 // ─── Google Drive sync state ───────────────────────────────────────────────────
 const DRIVE_FILE_NAME = 'task-matrix.json';
 let driveFileId       = localStorage.getItem('tm_drive_file') || null;  // id of the appData file
@@ -301,21 +452,72 @@ function initGis() {
     scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata',
     callback: (resp) => {
       if (resp && resp.access_token) {
-        accessToken = resp.access_token;
+        accessToken   = resp.access_token;
         gcalConnected = true;
+        silentReauth  = false;
+        // Remember this device so future visits reconnect silently.
+        localStorage.setItem(GCAL_REMEMBER_KEY, '1');
         updateGcalUI();
-        onConnected();
+        startTokenRefresh();
+        const wasBackground = suppressSyncOnToken;
+        suppressSyncOnToken = false;
+        if (!wasBackground) onConnected();   // full pull + reconcile on real (re)connect
       } else {
         setGcalStatus('Could not connect to Google', 'err');
+      }
+    },
+    // Fires when a token request fails — most importantly when a SILENT
+    // (prompt:'') request can't complete without showing UI. We swallow that
+    // quietly and just leave the Connect button for a one-tap manual sign-in.
+    error_callback: (err) => {
+      suppressSyncOnToken = false;
+      if (silentReauth) {
+        silentReauth = false;
+        updateGcalUI();   // back to "Connect Google Calendar", no scary error
+      } else {
+        setGcalStatus('Sign-in was cancelled — tap Connect to retry', 'err');
       }
     },
   });
   gcalBtn.disabled = false;
   updateGcalUI();
+
+  // Remembered device? Try to reconnect SILENTLY so the user doesn't have to tap
+  // Connect every visit. If their Google session is gone, error_callback fires
+  // and we fall back to the normal Connect button.
+  if (localStorage.getItem(GCAL_REMEMBER_KEY) === '1') {
+    silentReauth = true;
+    setGcalStatus('Reconnecting to Google…');
+    try { tokenClient.requestAccessToken({ prompt: '' }); }
+    catch (_) { silentReauth = false; updateGcalUI(); }
+  }
+}
+
+// Google access tokens last ~1 hour. While connected, quietly refresh in the
+// background so a long session never interrupts you to sign in again.
+function startTokenRefresh() {
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    if (gcalConnected && tokenClient) {
+      suppressSyncOnToken = true;   // a refresh shouldn't trigger a full re-sync
+      try { tokenClient.requestAccessToken({ prompt: '' }); }
+      catch (_) { suppressSyncOnToken = false; }
+    }
+  }, 50 * 60 * 1000);  // every 50 minutes
+}
+
+// Try to silently recover a token after one expired mid-use, without bugging
+// the user. If it works, the next scheduled sync just succeeds.
+function attemptSilentReconnect() {
+  if (!tokenClient || localStorage.getItem(GCAL_REMEMBER_KEY) !== '1') return;
+  silentReauth = true;
+  try { tokenClient.requestAccessToken({ prompt: '' }); }
+  catch (_) { silentReauth = false; }
 }
 
 gcalBtn.addEventListener('click', () => {
   if (!tokenClient) return;
+  silentReauth = false;
   // 'consent' the first time so the permission screen shows; '' = silent reconnect.
   tokenClient.requestAccessToken({ prompt: gcalConnected ? '' : 'consent' });
 });
@@ -350,7 +552,8 @@ async function gcal(method, path, body) {
     gcalConnected = false;
     accessToken = null;
     updateGcalUI();
-    setGcalStatus('Google session expired — tap Connect again', 'err');
+    setGcalStatus('Refreshing Google session…');
+    attemptSilentReconnect();        // recover without bugging the user, if possible
     throw new Error('expired');
   }
   if (r.status === 204) return null; // e.g. successful DELETE
@@ -375,7 +578,8 @@ async function drive(method, url, body, raw) {
     gcalConnected = false;
     accessToken = null;
     updateGcalUI();
-    setGcalStatus('Google session expired — tap Connect again', 'err');
+    setGcalStatus('Refreshing Google session…');
+    attemptSilentReconnect();
     throw new Error('expired');
   }
   if (r.status === 204) return null;
@@ -677,7 +881,17 @@ function cancelEdit() { editingId = null; render(); }
 // Soft-delete: keep a tombstone so the deletion syncs to other devices (and the
 // calendar event gets removed on the next sync). Filtered out at render time.
 function deleteTask(id) { const t = find(id); if (t) { t.deleted = true; t.updatedAt = Date.now(); persist(); render(); } }
-function toggleDone(id) { const t = find(id); if (t) { t.done = !t.done; t.updatedAt = Date.now(); persist(); render(); } }
+function toggleDone(id) {
+  const t = find(id);
+  if (t) {
+    t.done = !t.done;
+    t.completedAt = t.done ? Date.now() : null;   // stamp completion for the activity log
+    t.updatedAt = Date.now();
+    persist();
+    render();
+  }
+}
+function reopenTask(id) { toggleDone(id); }   // log "↩ reopen" puts a task back on the board
 function moveTask(id, q) { const t = find(id); if (t && t.quad !== q) { t.quad = q; t.updatedAt = Date.now(); persist(); render(); } }
 
 function find(id) { return tasks.find(t => t.id === id); }
@@ -753,8 +967,80 @@ function render() {
       });
     }
   }
+  renderLog();
   updateStatus();
 }
+
+// ─── Completed-task activity log ────────────────────────────────────────────────
+// Lists every finished task below the matrix, with timing: how long after it was
+// added it got done, and (if it had a deadline) whether it was on time or late.
+function fmtDuration(ms) {
+  if (ms < 0) ms = 0;
+  const min = Math.round(ms / 60000);
+  if (min < 1)   return 'under a minute';
+  if (min < 60)  return min + ' min';
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 24)    return h + 'h' + (m ? ' ' + m + 'm' : '');
+  const d = Math.floor(h / 24), hh = h % 24;
+  return d + 'd' + (hh ? ' ' + hh + 'h' : '');
+}
+
+function renderLog() {
+  const done = tasks
+    .filter(t => t.done && !t.deleted)
+    .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+
+  document.getElementById('logCount').textContent = done.length;
+  const wrap = document.getElementById('logList');
+
+  if (!done.length) {
+    wrap.innerHTML = '<div class="empty-msg">No completed tasks yet.</div>';
+    return;
+  }
+
+  wrap.innerHTML = done.map(t => {
+    const when = t.completedAt
+      ? new Date(t.completedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    let badge = '<span class="log-badge done">Completed</span>';
+    const parts = [];
+
+    if (t.deadline && t.completedAt) {
+      const diff = t.completedAt - t.deadline;   // +ve = finished after deadline
+      if (diff > 60000) {
+        badge = '<span class="log-badge late">Delayed</span>';
+        parts.push('Finished <b>' + fmtDuration(diff) + '</b> after the deadline.');
+      } else {
+        badge = '<span class="log-badge ontime">On time</span>';
+        parts.push('Finished ' + fmtDuration(-diff) + ' before the deadline.');
+      }
+    }
+    if (t.completedAt && t.id) {
+      parts.push('Took ' + fmtDuration(t.completedAt - t.id) + ' from when it was added.');
+    }
+
+    return `
+      <div class="log-item">
+        <div class="log-top">${badge}<span class="log-when">${when}</span></div>
+        <div class="log-text">${esc(t.text)}</div>
+        ${parts.length ? `<div class="log-detail">${parts.join(' ')}</div>` : ''}
+        <button class="log-reopen" onclick="reopenTask(${t.id})">↩ reopen</button>
+      </div>`;
+  }).join('');
+}
+
+// "Clear completed" — soft-delete every done task (tombstones, so the clear syncs
+// to other devices and the calendar events get cleaned up on the next sync).
+document.getElementById('logClear').addEventListener('click', () => {
+  const done = tasks.filter(t => t.done && !t.deleted);
+  if (!done.length) return;
+  if (!confirm('Clear ' + done.length + ' completed task(s) from the log?')) return;
+  const now = Date.now();
+  done.forEach(t => { t.deleted = true; t.updatedAt = now; });
+  persist();
+  render();
+});
 
 function taskCard(t) {
   if (editingId === t.id) {
@@ -898,6 +1184,248 @@ function updateStatus() {
   const n = tasks.filter(t => !t.done && !t.deleted).length;
   statusEl.textContent = n ? `${n} active task${n === 1 ? '' : 's'}` : 'All clear ✓';
 }
+
+// ─── Fast Reading (RSVP) ────────────────────────────────────────────────────────
+// Rapid Serial Visual Presentation: words are flashed one at a time at a fixed
+// point so the eyes don't have to move (no saccades). Each word is split at its
+// Optimal Recognition Point (ORP) — the focal letter, shown in red — which is the
+// spot the eye naturally lands on. The "custom database" is a small library of
+// saved passages kept in localStorage on this device.
+
+const RSVP_LIB_KEY = 'tm_reading_lib';
+const RSVP_WPM_KEY = 'tm_reading_wpm';
+
+let rsvpLib     = [];
+let rsvpCurId   = null;       // id of the passage being edited/read
+let rsvpWords   = [];
+let rsvpIdx     = 0;
+let rsvpTimer   = null;
+let rsvpPlaying = false;
+let rsvpWpm     = parseInt(localStorage.getItem(RSVP_WPM_KEY) || '300', 10);
+
+// UI refs
+const readModal   = document.getElementById('readModal');
+const readLib     = document.getElementById('readLib');
+const readTitle   = document.getElementById('readTitle');
+const readContent = document.getElementById('readContent');
+const rsvpWordEl  = document.getElementById('rsvpWord');
+const rsvpBar     = document.getElementById('rsvpBar');
+const rsvpPos     = document.getElementById('rsvpPos');
+const rsvpEta     = document.getElementById('rsvpEta');
+const rsvpWpmEl   = document.getElementById('rsvpWpm');
+const rsvpWpmLbl  = document.getElementById('rsvpWpmLabel');
+const rsvpPlayBtn = document.getElementById('rsvpPlay');
+
+function loadRsvpLib() {
+  try { rsvpLib = JSON.parse(localStorage.getItem(RSVP_LIB_KEY) || '[]'); }
+  catch (_) { rsvpLib = []; }
+  if (!Array.isArray(rsvpLib)) rsvpLib = [];
+  // Seed a friendly sample the very first time.
+  if (!rsvpLib.length) {
+    rsvpLib = [{
+      id: Date.now(),
+      title: 'Sample — how this works',
+      text: 'Welcome to fast reading. Words appear one at a time in the same spot, so your eyes stay still instead of jumping across the line. The single red letter in each word marks the point your eye naturally focuses on. Start around three hundred words per minute, then nudge the speed up as it begins to feel easy. Reading this way takes a little practice, but it can roughly double your pace with good comprehension.'
+    }];
+    saveRsvpLib();
+  }
+}
+
+function saveRsvpLib() { localStorage.setItem(RSVP_LIB_KEY, JSON.stringify(rsvpLib)); }
+
+function refreshLibDropdown() {
+  readLib.innerHTML = rsvpLib
+    .map(p => `<option value="${p.id}">${esc(p.title || 'Untitled')}</option>`)
+    .join('');
+  if (rsvpCurId != null) readLib.value = String(rsvpCurId);
+}
+
+function selectPassage(id) {
+  const p = rsvpLib.find(x => String(x.id) === String(id));
+  if (!p) return;
+  rsvpCurId = p.id;
+  readTitle.value = p.title || '';
+  readContent.value = p.text || '';
+  refreshLibDropdown();
+  prepareWords();
+}
+
+// Split text into display tokens (words keep their trailing punctuation).
+function prepareWords() {
+  rsvpStop();
+  rsvpWords = (readContent.value || '').trim().split(/\s+/).filter(Boolean);
+  rsvpIdx = 0;
+  renderRsvpIdle();
+  updateRsvpMeta();
+}
+
+function renderRsvpIdle() {
+  rsvpWordEl.innerHTML = rsvpWords.length
+    ? '<span class="rsvp-idle">Press play to begin</span>'
+    : '<span class="rsvp-idle">Add some text above</span>';
+  rsvpBar.style.width = '0%';
+}
+
+// ORP: focal letter index grows with word length (~30% in). Matches the standard
+// table for 4 / 6 / 8 / 10–13-character words.
+function orpIndex(word) {
+  const n = word.length;
+  if (n <= 1)  return 0;
+  if (n <= 5)  return 1;
+  if (n <= 9)  return 2;
+  if (n <= 13) return 3;
+  return 4;
+}
+
+function showRsvpWord(word) {
+  const i = orpIndex(word);
+  const left  = word.slice(0, i);
+  const pivot = word.slice(i, i + 1);
+  const right = word.slice(i + 1);
+  rsvpWordEl.innerHTML =
+    `<span class="l">${esc(left)}</span>` +
+    `<span class="p">${esc(pivot)}</span>` +
+    `<span class="r">${esc(right)}</span>`;
+}
+
+function updateRsvpMeta() {
+  const total = rsvpWords.length;
+  rsvpPos.textContent = `${Math.min(rsvpIdx, total)} / ${total} words`;
+  rsvpBar.style.width = total ? (Math.min(rsvpIdx, total) / total * 100) + '%' : '0%';
+  const remaining = Math.max(total - rsvpIdx, 0);
+  const secs = Math.round(remaining / rsvpWpm * 60);
+  rsvpEta.textContent = remaining ? `~${Math.floor(secs / 60)}m ${secs % 60}s left` : '';
+}
+
+function rsvpTick() {
+  if (rsvpIdx >= rsvpWords.length) { rsvpStop(); renderRsvpIdle(); updateRsvpMeta(); return; }
+  const word = rsvpWords[rsvpIdx];
+  showRsvpWord(word);
+  rsvpIdx++;
+  updateRsvpMeta();
+
+  // Pace: base interval per word, with natural pauses on punctuation and a small
+  // bump for long words — this keeps comprehension up at speed.
+  let delay = 60000 / rsvpWpm;
+  if (/[,;:)\]\u2013\u2014]$/.test(word)) delay *= 1.6;
+  if (/[.!?\u2026]$/.test(word))          delay *= 2.3;
+  if (word.length > 8)                    delay *= 1.15;
+
+  rsvpTimer = setTimeout(rsvpTick, delay);
+}
+
+function rsvpPlay() {
+  if (!rsvpWords.length) return;
+  if (rsvpIdx >= rsvpWords.length) rsvpIdx = 0;
+  rsvpPlaying = true;
+  rsvpPlayBtn.textContent = '⏸ Pause';
+  rsvpTick();
+}
+
+function rsvpStop() {
+  rsvpPlaying = false;
+  clearTimeout(rsvpTimer);
+  rsvpTimer = null;
+  rsvpPlayBtn.textContent = '▶ Play';
+}
+
+function rsvpToggle() { rsvpPlaying ? rsvpStop() : rsvpPlay(); }
+
+// Controls
+rsvpPlayBtn.addEventListener('click', rsvpToggle);
+document.getElementById('rsvpReset').addEventListener('click', () => {
+  rsvpStop(); rsvpIdx = 0; renderRsvpIdle(); updateRsvpMeta();
+});
+document.getElementById('rsvpPrev').addEventListener('click', () => {
+  const wasPlaying = rsvpPlaying; rsvpStop();
+  rsvpIdx = Math.max(0, rsvpIdx - 10);
+  if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
+  updateRsvpMeta();
+  if (wasPlaying) rsvpPlay();
+});
+document.getElementById('rsvpNext').addEventListener('click', () => {
+  const wasPlaying = rsvpPlaying; rsvpStop();
+  rsvpIdx = Math.min(rsvpWords.length, rsvpIdx + 10);
+  if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
+  updateRsvpMeta();
+  if (wasPlaying) rsvpPlay();
+});
+
+// Speed
+function setWpm(v) {
+  rsvpWpm = parseInt(v, 10);
+  rsvpWpmEl.value = rsvpWpm;
+  rsvpWpmLbl.textContent = rsvpWpm + ' WPM';
+  localStorage.setItem(RSVP_WPM_KEY, String(rsvpWpm));
+  document.querySelectorAll('#rsvpPresets button').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.wpm, 10) === rsvpWpm));
+  updateRsvpMeta();
+}
+rsvpWpmEl.addEventListener('input', e => setWpm(e.target.value));
+document.querySelectorAll('#rsvpPresets button').forEach(b =>
+  b.addEventListener('click', () => setWpm(b.dataset.wpm)));
+
+// Library editing
+readLib.addEventListener('change', e => selectPassage(e.target.value));
+
+document.getElementById('readNew').addEventListener('click', () => {
+  const p = { id: Date.now(), title: 'New passage', text: '' };
+  rsvpLib.unshift(p);
+  saveRsvpLib();
+  rsvpCurId = p.id;
+  refreshLibDropdown();
+  selectPassage(p.id);
+  readTitle.focus();
+});
+
+document.getElementById('readSave').addEventListener('click', () => {
+  const p = rsvpLib.find(x => String(x.id) === String(rsvpCurId));
+  if (!p) return;
+  p.title = readTitle.value.trim() || 'Untitled';
+  p.text  = readContent.value;
+  saveRsvpLib();
+  refreshLibDropdown();
+  prepareWords();
+  flash('Passage saved');
+});
+
+document.getElementById('readDelete').addEventListener('click', () => {
+  if (rsvpCurId == null) return;
+  if (!confirm('Delete this passage?')) return;
+  rsvpLib = rsvpLib.filter(x => String(x.id) !== String(rsvpCurId));
+  saveRsvpLib();
+  rsvpCurId = rsvpLib[0] ? rsvpLib[0].id : null;
+  refreshLibDropdown();
+  if (rsvpCurId != null) selectPassage(rsvpCurId);
+  else { readTitle.value = ''; readContent.value = ''; prepareWords(); }
+});
+
+// Re-tokenize as the user types, so play always reflects the latest text.
+readContent.addEventListener('input', prepareWords);
+
+// Open / close modal
+function openReader() {
+  loadRsvpLib();
+  refreshLibDropdown();
+  if (rsvpCurId == null && rsvpLib[0]) rsvpCurId = rsvpLib[0].id;
+  if (rsvpCurId != null) selectPassage(rsvpCurId);
+  setWpm(rsvpWpm);
+  readModal.classList.add('show');
+}
+function closeReader() { rsvpStop(); readModal.classList.remove('show'); }
+
+document.getElementById('readLaunch').addEventListener('click', openReader);
+document.getElementById('readClose').addEventListener('click', closeReader);
+readModal.addEventListener('click', e => { if (e.target === readModal) closeReader(); });
+
+// Spacebar toggles play/pause while the reader is open (unless typing in a field).
+document.addEventListener('keydown', e => {
+  if (!readModal.classList.contains('show')) return;
+  if (e.code === 'Space' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    e.preventDefault(); rsvpToggle();
+  }
+  if (e.key === 'Escape') closeReader();
+});
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 render();
