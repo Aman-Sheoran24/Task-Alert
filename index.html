@@ -84,6 +84,7 @@
 
     /* Task card */
     .task {
+      position: relative;
       background: white; border-radius: 6px; padding: 8px;
       font-size: 13px; border: 1px solid rgba(0,0,0,0.06);
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -118,6 +119,31 @@
     .task-btn:hover, .task-btn:active { background: #efefef; }
     .task-btn.green { color: #27ae60; border-color: #a9dfbf; }
     .task-btn.red   { color: #e74c3c; }
+    .task-btn.dots  { flex: 0 0 36px; font-weight: 700; letter-spacing: 1px; }
+
+    /* Per-task note / comment */
+    .task-note {
+      font-size: 12px; color: #555; background: #f6f7f9;
+      border: 1px solid #ececf0; border-radius: 5px;
+      padding: 5px 8px; margin-bottom: 5px;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* 3-dot task menu (pops up above the action row) */
+    .task-menu {
+      position: absolute; right: 6px; bottom: 40px; z-index: 60;
+      min-width: 150px; background: #fff;
+      border: 1px solid #e3e6ea; border-radius: 9px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+      overflow: hidden; display: none;
+    }
+    .task-menu.open { display: block; }
+    .task-menu button {
+      display: block; width: 100%; text-align: left;
+      border: none; background: #fff; color: #333;
+      padding: 10px 12px; font-size: 13px; cursor: pointer;
+    }
+    .task-menu button:hover, .task-menu button:active { background: #f2f3f5; }
 
     /* Edit mode */
     .task-edit {
@@ -326,6 +352,20 @@
   </div>
 </div>
 
+<!-- Note / comment editor -->
+<div class="modal" id="noteModal">
+  <div class="modal-box">
+    <h3>Note</h3>
+    <label>Add a note or comment for this task</label>
+    <textarea id="noteInput" rows="4"
+      style="width:100%;padding:10px;margin-bottom:14px;border:1px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.4;outline:none;resize:vertical;"></textarea>
+    <div class="modal-btns">
+      <button class="m-set"  id="noteSave">Save note</button>
+      <button class="m-skip" id="noteCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Fast Reading (RSVP) modal -->
 <div class="modal" id="readModal">
   <div class="modal-box read-box">
@@ -404,6 +444,8 @@ const addBtn     = document.getElementById('addBtn');
 const voiceBtn   = document.getElementById('voiceBtn');
 const dlModal    = document.getElementById('dlModal');
 const dlInput    = document.getElementById('dlInput');
+const noteModal  = document.getElementById('noteModal');
+const noteInput  = document.getElementById('noteInput');
 const statusEl   = document.getElementById('status');
 const gcalBtn    = document.getElementById('gcalBtn');
 const gcalStatus = document.getElementById('gcalStatus');
@@ -411,6 +453,9 @@ const gcalStatus = document.getElementById('gcalStatus');
 // ─── App state ───────────────────────────────────────────────────────────────
 let editingId   = null;
 let pendingText = '';
+let dlMode      = 'add';   // 'add' (new task) | 'edit' (change an existing deadline)
+let dlEditId    = null;    // task id when dlMode === 'edit'
+let noteTaskId  = null;    // task id whose note is being edited
 
 // ─── Drag state ──────────────────────────────────────────────────────────────
 let dragId       = null;
@@ -814,12 +859,20 @@ if (SR) {
 }
 
 // ─── Add task flow ────────────────────────────────────────────────────────────
+const dlTitle    = dlModal.querySelector('h3');
+const dlConfirmB = document.getElementById('dlConfirm');
+const dlSkipB    = document.getElementById('dlSkip');
+
 function openAddFlow() {
   const text = taskInput.value.trim();
   if (!text) { taskInput.focus(); return; }
+  dlMode = 'add'; dlEditId = null;
   pendingText = text;
   taskInput.value = '';
   dlInput.value = '';
+  dlTitle.textContent    = 'Set a deadline? (optional)';
+  dlConfirmB.textContent = 'Set deadline';
+  dlSkipB.textContent    = 'Skip';
   dlModal.classList.add('show');
   setTimeout(() => dlInput.focus(), 60);
 }
@@ -827,16 +880,94 @@ function openAddFlow() {
 addBtn.addEventListener('click', openAddFlow);
 taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') openAddFlow(); });
 
-document.getElementById('dlConfirm').addEventListener('click', () => {
+// Reuse the same modal to change (or clear) an existing task's deadline.
+function openDeadlineEditor(id) {
+  const t = find(id);
+  if (!t) return;
+  dlMode = 'edit'; dlEditId = id;
+  dlInput.value          = t.deadline ? toLocalInput(t.deadline) : '';
+  dlTitle.textContent    = 'Change deadline';
+  dlConfirmB.textContent = 'Save';
+  dlSkipB.textContent    = 'Clear deadline';
+  dlModal.classList.add('show');
+  setTimeout(() => dlInput.focus(), 60);
+}
+
+// Absolute ms → the local wall-clock value <input type=datetime-local> expects.
+function toLocalInput(ms) {
+  const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+dlConfirmB.addEventListener('click', () => {
   const dl = dlInput.value ? new Date(dlInput.value).getTime() : null;
-  commitAdd(pendingText, dl);
-  dlModal.classList.remove('show');
+  if (dlMode === 'edit') applyDeadline(dlEditId, dl);
+  else                   commitAdd(pendingText, dl);
+  closeDeadlineModal();
 });
 
-document.getElementById('dlSkip').addEventListener('click', () => {
-  commitAdd(pendingText, null);
-  dlModal.classList.remove('show');
+dlSkipB.addEventListener('click', () => {
+  if (dlMode === 'edit') applyDeadline(dlEditId, null);  // button reads "Clear deadline"
+  else                   commitAdd(pendingText, null);   // button reads "Skip"
+  closeDeadlineModal();
 });
+
+function closeDeadlineModal() {
+  dlModal.classList.remove('show');
+  dlMode = 'add'; dlEditId = null;
+}
+
+// Change a task's deadline in place; persist() re-syncs its calendar event
+// (creates / updates / removes it as needed on the next sync).
+function applyDeadline(id, dl) {
+  const t = find(id);
+  if (!t) return;
+  t.deadline = dl || null;
+  t.updatedAt = Date.now();
+  persist();
+  render();
+}
+
+// ─── Note / comment editor ──────────────────────────────────────────────────────
+function openNoteEditor(id) {
+  const t = find(id);
+  if (!t) return;
+  noteTaskId = id;
+  noteInput.value = t.note || '';
+  noteModal.classList.add('show');
+  setTimeout(() => noteInput.focus(), 60);
+}
+
+document.getElementById('noteSave').addEventListener('click', () => {
+  const t = find(noteTaskId);
+  if (t) {
+    const v = noteInput.value.trim();
+    t.note = v || null;        // empty note clears it
+    t.updatedAt = Date.now();
+    persist();
+    render();
+  }
+  noteModal.classList.remove('show');
+  noteTaskId = null;
+});
+
+document.getElementById('noteCancel').addEventListener('click', () => {
+  noteModal.classList.remove('show');
+  noteTaskId = null;
+});
+
+// ─── Per-task ⋮ menu ─────────────────────────────────────────────────────────────
+function toggleTaskMenu(ev, id) {
+  ev.stopPropagation();   // keep the document handler from closing it instantly
+  const menu = document.querySelector(`.task-menu[data-menu="${id}"]`);
+  const wasOpen = menu && menu.classList.contains('open');
+  closeAllMenus();
+  if (menu && !wasOpen) menu.classList.add('open');
+}
+function closeAllMenus() {
+  document.querySelectorAll('.task-menu.open').forEach(m => m.classList.remove('open'));
+}
+document.addEventListener('click', closeAllMenus);
 
 dlInput.addEventListener('focus', () => {
   if (!dlInput.value) {
@@ -941,9 +1072,10 @@ function deadlineBadge(t) {
 // ─── Render ───────────────────────────────────────────────────────────────────
 function render() {
   for (let q = 1; q <= 4; q++) {
-    const list = tasks.filter(t => t.quad === q && !t.deleted);
+    // Done tasks leave the board entirely — they live in the Activity log below.
+    const list = tasks.filter(t => t.quad === q && !t.deleted && !t.done);
     const el   = document.getElementById('q' + q);
-    document.getElementById('cnt' + q).textContent = list.filter(t => !t.done).length;
+    document.getElementById('cnt' + q).textContent = list.length;
 
     if (!list.length) {
       el.innerHTML = '<div class="empty-msg">—</div>';
@@ -1024,6 +1156,7 @@ function renderLog() {
       <div class="log-item">
         <div class="log-top">${badge}<span class="log-when">${when}</span></div>
         <div class="log-text">${esc(t.text)}</div>
+        ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ''}
         ${parts.length ? `<div class="log-detail">${parts.join(' ')}</div>` : ''}
         <button class="log-reopen" onclick="reopenTask(${t.id})">↩ reopen</button>
       </div>`;
@@ -1055,14 +1188,20 @@ function taskCard(t) {
   }
 
   return `
-    <div class="task ${t.done ? 'done' : ''}" draggable="true" data-id="${t.id}">
+    <div class="task" draggable="true" data-id="${t.id}">
       <span class="task-handle" title="Hold to drag">⠿⠿</span>
       <div class="task-text">${esc(t.text)}</div>
+      ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ''}
       ${deadlineBadge(t)}
       <div class="task-actions">
-        <button class="task-btn ${t.done ? '' : 'green'}" onclick="toggleDone(${t.id})">${t.done ? '↩' : '✓'}</button>
-        <button class="task-btn" onclick="startEdit(${t.id})">✏</button>
-        <button class="task-btn red" onclick="deleteTask(${t.id})">✕</button>
+        <button class="task-btn green" onclick="toggleDone(${t.id})" title="Mark done">✓</button>
+        <button class="task-btn dots" onclick="toggleTaskMenu(event, ${t.id})" title="More">⋮</button>
+        <button class="task-btn red" onclick="deleteTask(${t.id})" title="Delete">✕</button>
+      </div>
+      <div class="task-menu" data-menu="${t.id}">
+        <button onclick="startEdit(${t.id})">✏️ Edit text</button>
+        <button onclick="openNoteEditor(${t.id})">💬 ${t.note ? 'Edit note' : 'Add note'}</button>
+        <button onclick="openDeadlineEditor(${t.id})">⏰ ${t.deadline ? 'Change deadline' : 'Set deadline'}</button>
       </div>
     </div>`;
 }
