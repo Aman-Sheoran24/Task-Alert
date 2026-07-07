@@ -290,9 +290,15 @@
     .rsvp-bar { height: 100%; width: 0%; background: #3498db; transition: width 0.08s linear; }
     .rsvp-meta { display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 10px; }
 
-    .rsvp-seek { margin-bottom: 8px; }
-    .rsvp-seek label { font-size: 11px; color: #999; display: block; margin-bottom: 3px; }
-    .rsvp-seek input[type=range] { width: 100%; }
+    .rsvp-jump { margin-bottom: 8px; }
+    .rsvp-jump label { font-size: 11px; color: #999; display: block; margin-bottom: 4px; }
+    .rsvp-jump-text {
+      max-height: 110px; overflow-y: auto; font-size: 13px; line-height: 1.8;
+      padding: 8px 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafbfc;
+    }
+    .rsvp-jump-text .w { cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+    .rsvp-jump-text .w:hover { background: #eaf1fb; }
+    .rsvp-jump-text .w.current { background: #3498db; color: #fff; }
 
     .rsvp-speed { margin-bottom: 8px; }
     .rsvp-speed label { font-size: 12px; color: #666; display: flex; justify-content: space-between; margin-bottom: 4px; }
@@ -445,9 +451,9 @@
     <div class="rsvp-progress"><div class="rsvp-bar" id="rsvpBar"></div></div>
     <div class="rsvp-meta"><span id="rsvpPos">0 / 0 words</span><span id="rsvpEta"></span></div>
 
-    <div class="rsvp-seek">
-      <label>Jump to any point — your place is remembered automatically</label>
-      <input type="range" id="rsvpSeek" min="0" max="0" value="0" step="1">
+    <div class="rsvp-jump">
+      <label>Tap a word below to start reading from there — your place is also remembered automatically</label>
+      <div class="rsvp-jump-text" id="rsvpJumpText"></div>
     </div>
 
     <div class="rsvp-speed">
@@ -628,9 +634,15 @@ function attemptSilentReconnect() {
 
 gcalBtn.addEventListener('click', () => {
   if (!tokenClient) return;
-  silentReauth = false;
-  // 'consent' the first time so the permission screen shows; '' = silent reconnect.
-  tokenClient.requestAccessToken({ prompt: gcalConnected ? '' : 'consent' });
+  // A device that has connected before should never see the full login/consent
+  // screen again on tapping Connect/Re-sync — even if a 401 mid-session dropped
+  // gcalConnected back to false a moment ago (e.g. token expired between syncs).
+  // Only a device that has genuinely never connected needs the 'consent' prompt.
+  const remembered = localStorage.getItem(GCAL_REMEMBER_KEY) === '1';
+  const trySilent  = gcalConnected || remembered;
+  silentReauth = trySilent;
+  if (trySilent && !gcalConnected) setGcalStatus('Reconnecting to Google…');
+  tokenClient.requestAccessToken({ prompt: trySilent ? '' : 'consent' });
 });
 
 function updateGcalUI() {
@@ -1530,7 +1542,8 @@ const rsvpEta     = document.getElementById('rsvpEta');
 const rsvpWpmEl   = document.getElementById('rsvpWpm');
 const rsvpWpmLbl  = document.getElementById('rsvpWpmLabel');
 const rsvpPlayBtn = document.getElementById('rsvpPlay');
-const rsvpSeekEl  = document.getElementById('rsvpSeek');
+const rsvpJumpText = document.getElementById('rsvpJumpText');
+let rsvpWordEls = [];   // cached <span> elements in rsvpJumpText, one per word
 
 function loadRsvpLib() {
   try { rsvpLib = JSON.parse(localStorage.getItem(RSVP_LIB_KEY) || '[]'); }
@@ -1577,9 +1590,39 @@ function prepareWords(resetIdx) {
   rsvpStop();
   rsvpWords = (readContent.value || '').trim().split(/\s+/).filter(Boolean);
   if (resetIdx !== false || rsvpIdx > rsvpWords.length) rsvpIdx = 0;
+  renderJumpText();
   renderRsvpIdle();
   updateRsvpMeta();
 }
+
+// The tappable passage: lets you jump straight to any word by sight instead of
+// hunting for a position on an abstract slider. Rebuilt whenever the word list
+// changes; the "current" highlight during playback is a cheap class toggle.
+function renderJumpText() {
+  rsvpJumpText.innerHTML = rsvpWords
+    .map((w, i) => `<span class="w" data-idx="${i}">${esc(w)}</span>`)
+    .join(' ');
+  rsvpWordEls = Array.from(rsvpJumpText.querySelectorAll('.w'));
+  highlightJumpWord();
+}
+
+function highlightJumpWord() {
+  if (!rsvpWordEls.length) return;
+  const i = Math.min(rsvpIdx, rsvpWordEls.length - 1);
+  rsvpWordEls.forEach((el, idx) => el.classList.toggle('current', idx === i));
+}
+
+rsvpJumpText.addEventListener('click', e => {
+  const el = e.target.closest('.w');
+  if (!el) return;
+  const wasPlaying = rsvpPlaying;
+  rsvpStop();
+  rsvpIdx = parseInt(el.dataset.idx, 10) || 0;
+  if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
+  updateRsvpMeta();
+  saveReadingPosition();
+  if (wasPlaying) rsvpPlay();
+});
 
 function renderRsvpIdle() {
   if (!rsvpWords.length) {
@@ -1630,8 +1673,7 @@ function updateRsvpMeta() {
   const remaining = Math.max(total - rsvpIdx, 0);
   const secs = Math.round(remaining / rsvpWpm * 60);
   rsvpEta.textContent = remaining ? `~${Math.floor(secs / 60)}m ${secs % 60}s left` : '';
-  rsvpSeekEl.max = Math.max(total - 1, 0);
-  rsvpSeekEl.value = Math.min(rsvpIdx, total ? total - 1 : 0);
+  highlightJumpWord();
 }
 
 function rsvpTick() {
@@ -1692,17 +1734,6 @@ document.getElementById('rsvpNext').addEventListener('click', () => {
   rsvpIdx = Math.min(rsvpWords.length, rsvpIdx + 10);
   if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
   updateRsvpMeta();
-  if (wasPlaying) rsvpPlay();
-});
-
-// Seek slider — jump straight to any word in the passage instead of only being
-// able to restart from the beginning or step 10 words at a time.
-rsvpSeekEl.addEventListener('input', () => {
-  const wasPlaying = rsvpPlaying; rsvpStop();
-  rsvpIdx = Math.min(parseInt(rsvpSeekEl.value, 10) || 0, Math.max(rsvpWords.length - 1, 0));
-  if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
-  updateRsvpMeta();
-  saveReadingPosition();
   if (wasPlaying) rsvpPlay();
 });
 
