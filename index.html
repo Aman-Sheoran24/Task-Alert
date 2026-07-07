@@ -290,15 +290,26 @@
     .rsvp-bar { height: 100%; width: 0%; background: #3498db; transition: width 0.08s linear; }
     .rsvp-meta { display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 10px; }
 
-    .rsvp-jump { margin-bottom: 8px; }
-    .rsvp-jump label { font-size: 11px; color: #999; display: block; margin-bottom: 4px; }
+    /* One box, two modes: the editable textarea and the tappable rendering
+       occupy the same slot and are never both visible at once. */
+    .read-text-wrap { position: relative; margin-bottom: 4px; }
     .rsvp-jump-text {
-      max-height: 110px; overflow-y: auto; font-size: 13px; line-height: 1.8;
-      padding: 8px 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafbfc;
+      min-height: 90px; max-height: 220px; overflow-y: auto; font-size: 13px; line-height: 1.8;
+      padding: 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafbfc;
     }
     .rsvp-jump-text .w { cursor: pointer; padding: 1px 3px; border-radius: 3px; }
     .rsvp-jump-text .w:hover { background: #eaf1fb; }
     .rsvp-jump-text .w.current { background: #3498db; color: #fff; }
+    .hidden { display: none !important; }
+
+    .read-text-hint {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; color: #999; margin-bottom: 8px;
+    }
+    .read-edit-toggle {
+      border: none; background: none; color: #3498db; font-size: 12px;
+      font-weight: 600; cursor: pointer; padding: 2px 0;
+    }
 
     .rsvp-speed { margin-bottom: 8px; }
     .rsvp-speed label { font-size: 12px; color: #666; display: flex; justify-content: space-between; margin-bottom: 4px; }
@@ -436,7 +447,19 @@
     </div>
 
     <input class="read-title-input" id="readTitle" type="text" placeholder="Passage title (e.g. Article 1)" autocomplete="off">
-    <textarea class="read-text" id="readContent" placeholder="Paste or type the text you want to speed-read here…"></textarea>
+
+    <!-- One box, two modes: an editable textarea while writing/pasting, or the
+         same text rendered as tappable words to pick a start point — never both
+         at once. -->
+    <div class="read-text-wrap">
+      <textarea class="read-text" id="readContent" placeholder="Paste or type the text you want to speed-read here…"></textarea>
+      <div class="rsvp-jump-text" id="rsvpJumpText"></div>
+    </div>
+    <div class="read-text-hint">
+      <span id="readTextHintLabel">Tap a word to start reading from there</span>
+      <button class="read-edit-toggle" id="readEditToggle">✏️ Edit text</button>
+    </div>
+
     <div class="read-save-row">
       <button class="read-save" id="readSave">Save passage</button>
       <button class="read-del"  id="readDelete">Delete</button>
@@ -450,11 +473,6 @@
     </div>
     <div class="rsvp-progress"><div class="rsvp-bar" id="rsvpBar"></div></div>
     <div class="rsvp-meta"><span id="rsvpPos">0 / 0 words</span><span id="rsvpEta"></span></div>
-
-    <div class="rsvp-jump">
-      <label>Tap a word below to start reading from there — your place is also remembered automatically</label>
-      <div class="rsvp-jump-text" id="rsvpJumpText"></div>
-    </div>
 
     <div class="rsvp-speed">
       <label>Speed <span id="rsvpWpmLabel">300 WPM</span></label>
@@ -1543,7 +1561,30 @@ const rsvpWpmEl   = document.getElementById('rsvpWpm');
 const rsvpWpmLbl  = document.getElementById('rsvpWpmLabel');
 const rsvpPlayBtn = document.getElementById('rsvpPlay');
 const rsvpJumpText = document.getElementById('rsvpJumpText');
+const readEditToggle    = document.getElementById('readEditToggle');
+const readTextHintLabel = document.getElementById('readTextHintLabel');
 let rsvpWordEls = [];   // cached <span> elements in rsvpJumpText, one per word
+
+// The passage textarea and the tap-to-jump rendering share one slot and are
+// never shown together — 'edit' while writing/pasting, 'tap' while reading.
+let readMode = 'edit';
+
+function applyReadMode() {
+  const editing = readMode === 'edit';
+  readContent.classList.toggle('hidden', !editing);
+  rsvpJumpText.classList.toggle('hidden', editing);
+  readEditToggle.textContent = editing ? '✓ Done' : '✏️ Edit text';
+  readTextHintLabel.textContent = editing
+    ? 'Editing — tap Done to pick a start point instead'
+    : 'Tap a word to start reading from there';
+}
+
+readEditToggle.addEventListener('click', () => {
+  readMode = readMode === 'edit' ? 'tap' : 'edit';
+  if (readMode === 'tap') renderJumpText();   // reflect whatever was just typed
+  applyReadMode();
+  if (readMode === 'edit') readContent.focus();
+});
 
 function loadRsvpLib() {
   try { rsvpLib = JSON.parse(localStorage.getItem(RSVP_LIB_KEY) || '[]'); }
@@ -1581,6 +1622,10 @@ function selectPassage(id) {
   // at word 0 — that's the whole point of remembering a position per passage.
   rsvpIdx = p.lastIdx || 0;
   prepareWords(false);
+  // A passage that already has text opens ready to tap-and-read; an empty one
+  // (e.g. a freshly created passage) opens ready to type into.
+  readMode = (p.text || '').trim() ? 'tap' : 'edit';
+  applyReadMode();
 }
 
 // Split text into display tokens (words keep their trailing punctuation).
@@ -1771,6 +1816,8 @@ document.getElementById('readSave').addEventListener('click', () => {
   saveRsvpLib();
   refreshLibDropdown();
   prepareWords();
+  readMode = p.text.trim() ? 'tap' : 'edit';
+  applyReadMode();
   flash('Passage saved');
 });
 
@@ -1786,6 +1833,7 @@ document.getElementById('readDelete').addEventListener('click', () => {
     rsvpCurId = null;
     refreshLibDropdown();
     readTitle.value = ''; readContent.value = ''; prepareWords();
+    readMode = 'edit'; applyReadMode();
   }
 });
 
@@ -1799,6 +1847,7 @@ function openReader() {
   refreshLibDropdown();
   const idToOpen = rsvpCurId != null ? rsvpCurId : (rsvpLib[0] && rsvpLib[0].id);
   if (idToOpen != null) selectPassage(idToOpen);
+  else applyReadMode();
   setWpm(rsvpWpm);
   readModal.classList.add('show');
 }
