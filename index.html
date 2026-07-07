@@ -121,13 +121,20 @@
     .task-btn.red   { color: #e74c3c; }
     .task-btn.dots  { flex: 0 0 36px; font-weight: 700; letter-spacing: 1px; }
 
-    /* Per-task note / comment */
+    /* Per-task notes / comments (a task can have several) */
+    .task-notes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 5px; }
     .task-note {
       font-size: 12px; color: #555; background: #f6f7f9;
       border: 1px solid #ececf0; border-radius: 5px;
-      padding: 5px 8px; margin-bottom: 5px;
-      white-space: pre-wrap; word-break: break-word;
+      padding: 5px 8px;
+      display: flex; align-items: flex-start; gap: 6px;
     }
+    .task-note .note-text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+    .task-note .note-del {
+      border: none; background: none; color: #bbb; font-size: 12px;
+      cursor: pointer; line-height: 1; padding: 1px 2px; flex-shrink: 0;
+    }
+    .task-note .note-del:hover, .task-note .note-del:active { color: #e74c3c; }
 
     /* 3-dot task menu (pops up above the action row) */
     .task-menu {
@@ -188,6 +195,29 @@
     .m-set  { background: #2ecc71; color: white; }
     .m-skip { background: #ecf0f1; color: #555; font-weight: 400; }
 
+    /* ── Notes & Ideas (free-form, not tasks) ─────────────────────── */
+    .notes-section {
+      background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+      padding: 10px; margin-top: 12px;
+    }
+    .notes-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .notes-title .log-count { background: rgba(0,0,0,0.1); border-radius: 9px; padding: 1px 6px; margin-left: 4px; font-size: 10px; }
+    .idea-input-row { display: flex; gap: 6px; margin: 8px 0; }
+    .idea-input-row textarea {
+      flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 13px; font-family: inherit; resize: vertical; outline: none;
+    }
+    .idea-input-row textarea:focus { border-color: #aaa; }
+    .idea-add { border: none; border-radius: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer; background: #34495e; color: #fff; }
+    .idea-add:active { opacity: 0.8; }
+    .idea-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .idea-item { border: 1px solid #eee; border-radius: 8px; padding: 7px 9px; background: #fafbfc; }
+    .idea-text { font-size: 13px; color: #444; white-space: pre-wrap; word-break: break-word; margin-bottom: 4px; }
+    .idea-bottom { display: flex; align-items: center; justify-content: space-between; }
+    .idea-when { font-size: 10px; color: #aaa; }
+    .idea-del { border: none; background: none; color: #bbb; font-size: 12px; cursor: pointer; padding: 1px 2px; }
+    .idea-del:hover, .idea-del:active { color: #e74c3c; }
+
     /* ── Completed-task log ───────────────────────────────────────── */
     .log-section {
       background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
@@ -197,11 +227,13 @@
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 8px;
     }
-    .log-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .log-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; cursor: pointer; }
     .log-title .log-count { background: rgba(0,0,0,0.1); border-radius: 9px; padding: 1px 6px; margin-left: 4px; font-size: 10px; }
-    .log-clear { border: none; background: #f2f3f4; color: #888; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
-    .log-clear:active { opacity: 0.7; }
+    .log-head-actions { display: flex; gap: 6px; }
+    .log-toggle, .log-clear { border: none; background: #f2f3f4; color: #888; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+    .log-toggle:active, .log-clear:active { opacity: 0.7; }
     .log-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .log-list.collapsed { display: none; }
     .log-item { border: 1px solid #eee; border-radius: 8px; padding: 7px 9px; background: #fafbfc; }
     .log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
     .log-when { font-size: 10px; color: #aaa; margin-left: auto; }
@@ -257,6 +289,10 @@
     .rsvp-progress { height: 5px; background: #e6e9ec; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
     .rsvp-bar { height: 100%; width: 0%; background: #3498db; transition: width 0.08s linear; }
     .rsvp-meta { display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 10px; }
+
+    .rsvp-seek { margin-bottom: 8px; }
+    .rsvp-seek label { font-size: 11px; color: #999; display: block; margin-bottom: 3px; }
+    .rsvp-seek input[type=range] { width: 100%; }
 
     .rsvp-speed { margin-bottom: 8px; }
     .rsvp-speed label { font-size: 12px; color: #666; display: flex; justify-content: space-between; margin-bottom: 4px; }
@@ -326,15 +362,30 @@
   </div>
 </div>
 
+<!-- Notes & Ideas: free-form thoughts related to tasks that aren't tasks themselves -->
+<div class="notes-section" id="notesSection">
+  <div class="log-head">
+    <span class="notes-title">📝 Notes &amp; Ideas<span class="log-count" id="ideaCount">0</span></span>
+  </div>
+  <div class="idea-input-row">
+    <textarea id="ideaInput" rows="2" placeholder="A point or idea related to your tasks — not a task itself…"></textarea>
+    <button class="idea-add" id="ideaAdd">Add</button>
+  </div>
+  <div class="idea-list" id="ideaList"></div>
+</div>
+
 <div class="status" id="status"></div>
 
 <!-- Completed-task activity log -->
 <div class="log-section" id="logSection">
   <div class="log-head">
-    <span class="log-title">Activity log<span class="log-count" id="logCount">0</span></span>
-    <button class="log-clear" id="logClear">Clear completed</button>
+    <span class="log-title" id="logToggle">Activity log<span class="log-count" id="logCount">0</span></span>
+    <div class="log-head-actions">
+      <button class="log-toggle" id="logToggleBtn">Show</button>
+      <button class="log-clear" id="logClear">Clear completed</button>
+    </div>
   </div>
-  <div class="log-list" id="logList"></div>
+  <div class="log-list collapsed" id="logList"></div>
 </div>
 
 <!-- Fast-reading launcher -->
@@ -355,12 +406,12 @@
 <!-- Note / comment editor -->
 <div class="modal" id="noteModal">
   <div class="modal-box">
-    <h3>Note</h3>
-    <label>Add a note or comment for this task</label>
+    <h3>Add a comment</h3>
+    <label>This is added as a new comment — earlier comments on this task are kept</label>
     <textarea id="noteInput" rows="4"
       style="width:100%;padding:10px;margin-bottom:14px;border:1px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.4;outline:none;resize:vertical;"></textarea>
     <div class="modal-btns">
-      <button class="m-set"  id="noteSave">Save note</button>
+      <button class="m-set"  id="noteSave">Add comment</button>
       <button class="m-skip" id="noteCancel">Cancel</button>
     </div>
   </div>
@@ -393,6 +444,11 @@
     </div>
     <div class="rsvp-progress"><div class="rsvp-bar" id="rsvpBar"></div></div>
     <div class="rsvp-meta"><span id="rsvpPos">0 / 0 words</span><span id="rsvpEta"></span></div>
+
+    <div class="rsvp-seek">
+      <label>Jump to any point — your place is remembered automatically</label>
+      <input type="range" id="rsvpSeek" min="0" max="0" value="0" step="1">
+    </div>
 
     <div class="rsvp-speed">
       <label>Speed <span id="rsvpWpmLabel">300 WPM</span></label>
@@ -437,6 +493,16 @@ const REMIND_2H = 120;     // 2 hours
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 let tasks = JSON.parse(localStorage.getItem('tm_tasks') || '[]');
+
+// Migrate the old single `note` string (one comment per task) into a `notes`
+// array (many comments per task). Runs once per task, the first time it's seen
+// after this update; harmless to re-run since it only fires when `.notes` is absent.
+tasks.forEach(t => {
+  if (t.notes == null) {
+    t.notes = t.note ? [{ id: t.id + 1, text: t.note, createdAt: t.updatedAt || t.id }] : [];
+    delete t.note;
+  }
+});
 
 // ─── UI refs ─────────────────────────────────────────────────────────────────
 const taskInput  = document.getElementById('taskInput');
@@ -724,28 +790,28 @@ function taskEventBody(t) {
   };
 }
 
-// Recurring daily review event at DAILY_HOUR, description lists current Q1 tasks.
-function dailyEventBody() {
-  const q1 = tasks.filter(t => !t.done && !t.deleted && t.quad === 1);
-  const desc = q1.length
-    ? 'Urgent + Important right now:\n' + q1.map((t, i) => `${i + 1}. ${t.text}`).join('\n')
-    : 'No Urgent + Important tasks right now. Enjoy a focused day.';
-
-  const d = new Date();
-  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// Single-day review event for TODAY at DAILY_HOUR, listing current Q1 tasks.
+// Deliberately NOT a recurring event: an infinite RRULE:FREQ=DAILY event shows up
+// on every future day forever, even days with zero Urgent+Important tasks, which
+// is what was flooding the calendar. Instead we create at most one event, dated
+// today, and only when there's actually something to review — so an empty board
+// means no event at all, and a busy board only ever shows on the day it applies to.
+function dailyEventBody(q1, dateStr) {
   const hh = pad(DAILY_HOUR);
-
   return {
     summary: '🔴 Urgent + Important — daily review',
-    description: desc,
-    start: { dateTime: `${date}T${hh}:00:00`, timeZone: CAL_TIMEZONE },
-    end:   { dateTime: `${date}T${hh}:15:00`, timeZone: CAL_TIMEZONE },
-    recurrence: ['RRULE:FREQ=DAILY'],
+    description: 'Urgent + Important right now:\n' + q1.map((t, i) => `${i + 1}. ${t.text}`).join('\n'),
+    start: { dateTime: `${dateStr}T${hh}:00:00`, timeZone: CAL_TIMEZONE },
+    end:   { dateTime: `${dateStr}T${hh}:15:00`, timeZone: CAL_TIMEZONE },
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] },
   };
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 // Reconcile every task and the daily event with Google Calendar.
 async function syncCalendar() {
@@ -785,12 +851,42 @@ async function syncCalendar() {
   }
 }
 
+const DAILY_EVENT_KEY   = 'tm_daily_event_v2';   // JSON {id, date} for today's single-day event
+const LEGACY_DAILY_KEY  = 'tm_daily_event';       // old infinitely-recurring event id, one-time cleanup
+
 async function syncDailyEvent() {
-  const body = dailyEventBody();
-  const id = localStorage.getItem('tm_daily_event');
-  if (id) {
+  // One-time migration: the old scheme created a never-ending RRULE:FREQ=DAILY
+  // event, which is what was flooding the calendar with an entry on every day
+  // regardless of whether there was anything urgent. Delete it if we still have
+  // its id on this device.
+  const legacyId = localStorage.getItem(LEGACY_DAILY_KEY);
+  if (legacyId) {
+    try { await gcal('DELETE', '/calendars/primary/events/' + legacyId); }
+    catch (e) { if (e.message === 'expired') throw e; }
+    localStorage.removeItem(LEGACY_DAILY_KEY);
+  }
+
+  const q1 = tasks.filter(t => !t.done && !t.deleted && t.quad === 1);
+  const today = todayStr();
+
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(DAILY_EVENT_KEY) || 'null'); } catch (_) {}
+  if (saved && saved.date !== today) saved = null;   // that event was for a past day; nothing to clean up, it doesn't recur
+
+  if (!q1.length) {
+    // Nothing urgent+important right now — don't create a nag event for today.
+    if (saved && saved.id) {
+      try { await gcal('DELETE', '/calendars/primary/events/' + saved.id); }
+      catch (e) { if (e.message === 'expired') throw e; }
+    }
+    localStorage.removeItem(DAILY_EVENT_KEY);
+    return;
+  }
+
+  const body = dailyEventBody(q1, today);
+  if (saved && saved.id) {
     try {
-      await gcal('PUT', '/calendars/primary/events/' + id, body);
+      await gcal('PUT', '/calendars/primary/events/' + saved.id, body);
       return;
     } catch (e) {
       if (e.message === 'expired') throw e;
@@ -798,7 +894,7 @@ async function syncDailyEvent() {
     }
   }
   const ev = await gcal('POST', '/calendars/primary/events', body);
-  localStorage.setItem('tm_daily_event', ev.id);
+  localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: ev.id, date: today }));
 }
 
 // Reconcile calendar, then push the (event-id-stamped) task list to Drive.
@@ -929,11 +1025,13 @@ function applyDeadline(id, dl) {
 }
 
 // ─── Note / comment editor ──────────────────────────────────────────────────────
+// A task can carry several comments (t.notes is an array); this modal always adds
+// a new one rather than overwriting a single note.
 function openNoteEditor(id) {
   const t = find(id);
   if (!t) return;
   noteTaskId = id;
-  noteInput.value = t.note || '';
+  noteInput.value = '';
   noteModal.classList.add('show');
   setTimeout(() => noteInput.focus(), 60);
 }
@@ -942,10 +1040,13 @@ document.getElementById('noteSave').addEventListener('click', () => {
   const t = find(noteTaskId);
   if (t) {
     const v = noteInput.value.trim();
-    t.note = v || null;        // empty note clears it
-    t.updatedAt = Date.now();
-    persist();
-    render();
+    if (v) {
+      if (!t.notes) t.notes = [];
+      t.notes.push({ id: Date.now(), text: v, createdAt: Date.now() });
+      t.updatedAt = Date.now();
+      persist();
+      render();
+    }
   }
   noteModal.classList.remove('show');
   noteTaskId = null;
@@ -955,6 +1056,15 @@ document.getElementById('noteCancel').addEventListener('click', () => {
   noteModal.classList.remove('show');
   noteTaskId = null;
 });
+
+function deleteNote(taskId, noteId) {
+  const t = find(taskId);
+  if (!t || !t.notes) return;
+  t.notes = t.notes.filter(n => n.id !== noteId);
+  t.updatedAt = Date.now();
+  persist();
+  render();
+}
 
 // ─── Per-task ⋮ menu ─────────────────────────────────────────────────────────────
 function toggleTaskMenu(ev, id) {
@@ -1033,6 +1143,44 @@ function persist() {
   localStorage.setItem('tm_tasks', JSON.stringify(tasks));
   if (gcalConnected) scheduleSync();
 }
+
+// ─── Notes & Ideas (free-form, not tasks) ───────────────────────────────────────
+// A separate, lightweight scratchpad for thoughts related to your tasks that
+// don't belong in a task's comments or deserve a quadrant of their own.
+const IDEAS_KEY = 'tm_ideas';
+let ideas = JSON.parse(localStorage.getItem(IDEAS_KEY) || '[]');
+
+function saveIdeas() { localStorage.setItem(IDEAS_KEY, JSON.stringify(ideas)); }
+
+function renderIdeas() {
+  document.getElementById('ideaCount').textContent = ideas.length;
+  const wrap = document.getElementById('ideaList');
+  if (!ideas.length) { wrap.innerHTML = '<div class="empty-msg">No notes yet.</div>'; return; }
+  wrap.innerHTML = ideas.slice().sort((a, b) => b.createdAt - a.createdAt).map(n => `
+    <div class="idea-item">
+      <div class="idea-text">${esc(n.text)}</div>
+      <div class="idea-bottom">
+        <span class="idea-when">${new Date(n.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+        <button class="idea-del" onclick="deleteIdea(${n.id})" title="Delete">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function deleteIdea(id) {
+  ideas = ideas.filter(n => n.id !== id);
+  saveIdeas();
+  renderIdeas();
+}
+
+document.getElementById('ideaAdd').addEventListener('click', () => {
+  const input = document.getElementById('ideaInput');
+  const v = input.value.trim();
+  if (!v) return;
+  ideas.push({ id: Date.now(), text: v, createdAt: Date.now() });
+  saveIdeas();
+  input.value = '';
+  renderIdeas();
+});
 
 // ─── Classification ───────────────────────────────────────────────────────────
 function classify(text, deadline) {
@@ -1156,12 +1304,31 @@ function renderLog() {
       <div class="log-item">
         <div class="log-top">${badge}<span class="log-when">${when}</span></div>
         <div class="log-text">${esc(t.text)}</div>
-        ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ''}
+        ${taskNotesHtml(t)}
         ${parts.length ? `<div class="log-detail">${parts.join(' ')}</div>` : ''}
         <button class="log-reopen" onclick="reopenTask(${t.id})">↩ reopen</button>
       </div>`;
   }).join('');
 }
+
+// Activity log is collapsed by default — only the title + count badge show;
+// the list itself is opt-in via the toggle, and the choice is remembered.
+const LOG_COLLAPSED_KEY = 'tm_log_collapsed';
+let logCollapsed = localStorage.getItem(LOG_COLLAPSED_KEY) !== '0';
+
+function applyLogCollapsed() {
+  document.getElementById('logList').classList.toggle('collapsed', logCollapsed);
+  document.getElementById('logToggleBtn').textContent = logCollapsed ? 'Show' : 'Hide';
+}
+
+function toggleLogCollapsed() {
+  logCollapsed = !logCollapsed;
+  localStorage.setItem(LOG_COLLAPSED_KEY, logCollapsed ? '1' : '0');
+  applyLogCollapsed();
+}
+
+document.getElementById('logToggle').addEventListener('click', toggleLogCollapsed);
+document.getElementById('logToggleBtn').addEventListener('click', toggleLogCollapsed);
 
 // "Clear completed" — soft-delete every done task (tombstones, so the clear syncs
 // to other devices and the calendar events get cleaned up on the next sync).
@@ -1191,7 +1358,7 @@ function taskCard(t) {
     <div class="task" draggable="true" data-id="${t.id}">
       <span class="task-handle" title="Hold to drag">⠿⠿</span>
       <div class="task-text">${esc(t.text)}</div>
-      ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ''}
+      ${taskNotesHtml(t)}
       ${deadlineBadge(t)}
       <div class="task-actions">
         <button class="task-btn green" onclick="toggleDone(${t.id})" title="Mark done">✓</button>
@@ -1200,10 +1367,19 @@ function taskCard(t) {
       </div>
       <div class="task-menu" data-menu="${t.id}">
         <button onclick="startEdit(${t.id})">✏️ Edit text</button>
-        <button onclick="openNoteEditor(${t.id})">💬 ${t.note ? 'Edit note' : 'Add note'}</button>
+        <button onclick="openNoteEditor(${t.id})">💬 ${t.notes && t.notes.length ? 'Add another comment' : 'Add comment'}</button>
         <button onclick="openDeadlineEditor(${t.id})">⏰ ${t.deadline ? 'Change deadline' : 'Set deadline'}</button>
       </div>
     </div>`;
+}
+
+function taskNotesHtml(t) {
+  if (!t.notes || !t.notes.length) return '';
+  return `<div class="task-notes">${t.notes.map(n => `
+    <div class="task-note">
+      <span class="note-text">${esc(n.text)}</span>
+      <button class="note-del" onclick="deleteNote(${t.id}, ${n.id})" title="Delete comment">✕</button>
+    </div>`).join('')}</div>`;
 }
 
 function esc(s) {
@@ -1354,6 +1530,7 @@ const rsvpEta     = document.getElementById('rsvpEta');
 const rsvpWpmEl   = document.getElementById('rsvpWpm');
 const rsvpWpmLbl  = document.getElementById('rsvpWpmLabel');
 const rsvpPlayBtn = document.getElementById('rsvpPlay');
+const rsvpSeekEl  = document.getElementById('rsvpSeek');
 
 function loadRsvpLib() {
   try { rsvpLib = JSON.parse(localStorage.getItem(RSVP_LIB_KEY) || '[]'); }
@@ -1382,27 +1559,46 @@ function refreshLibDropdown() {
 function selectPassage(id) {
   const p = rsvpLib.find(x => String(x.id) === String(id));
   if (!p) return;
+  saveReadingPosition();   // persist progress on whichever passage we're leaving, if any
   rsvpCurId = p.id;
   readTitle.value = p.title || '';
   readContent.value = p.text || '';
   refreshLibDropdown();
-  prepareWords();
+  // Resume from wherever this passage was left off, instead of always restarting
+  // at word 0 — that's the whole point of remembering a position per passage.
+  rsvpIdx = p.lastIdx || 0;
+  prepareWords(false);
 }
 
 // Split text into display tokens (words keep their trailing punctuation).
-function prepareWords() {
+// resetIdx=false keeps the current rsvpIdx (used when resuming a saved passage);
+// resetIdx=true (the default, e.g. when the text itself was just edited) restarts at 0.
+function prepareWords(resetIdx) {
   rsvpStop();
   rsvpWords = (readContent.value || '').trim().split(/\s+/).filter(Boolean);
-  rsvpIdx = 0;
+  if (resetIdx !== false || rsvpIdx > rsvpWords.length) rsvpIdx = 0;
   renderRsvpIdle();
   updateRsvpMeta();
 }
 
 function renderRsvpIdle() {
-  rsvpWordEl.innerHTML = rsvpWords.length
-    ? '<span class="rsvp-idle">Press play to begin</span>'
-    : '<span class="rsvp-idle">Add some text above</span>';
-  rsvpBar.style.width = '0%';
+  if (!rsvpWords.length) {
+    rsvpWordEl.innerHTML = '<span class="rsvp-idle">Add some text above</span>';
+  } else if (rsvpIdx > 0 && rsvpIdx < rsvpWords.length) {
+    showRsvpWord(rsvpWords[rsvpIdx]);   // show where we'll resume from, statically
+  } else {
+    rsvpWordEl.innerHTML = '<span class="rsvp-idle">Press play to begin</span>';
+  }
+}
+
+// Remember this passage's reading position so reopening it (or reloading the
+// page) resumes here instead of forcing a restart from the beginning.
+function saveReadingPosition() {
+  if (rsvpCurId == null) return;
+  const p = rsvpLib.find(x => String(x.id) === String(rsvpCurId));
+  if (!p) return;
+  p.lastIdx = rsvpIdx;
+  saveRsvpLib();
 }
 
 // ORP: focal letter index grows with word length (~30% in). Matches the standard
@@ -1434,10 +1630,18 @@ function updateRsvpMeta() {
   const remaining = Math.max(total - rsvpIdx, 0);
   const secs = Math.round(remaining / rsvpWpm * 60);
   rsvpEta.textContent = remaining ? `~${Math.floor(secs / 60)}m ${secs % 60}s left` : '';
+  rsvpSeekEl.max = Math.max(total - 1, 0);
+  rsvpSeekEl.value = Math.min(rsvpIdx, total ? total - 1 : 0);
 }
 
 function rsvpTick() {
-  if (rsvpIdx >= rsvpWords.length) { rsvpStop(); renderRsvpIdle(); updateRsvpMeta(); return; }
+  if (rsvpIdx >= rsvpWords.length) {
+    rsvpIdx = 0;   // finished — next time this passage is opened, start over
+    rsvpStop();
+    renderRsvpIdle();
+    updateRsvpMeta();
+    return;
+  }
   const word = rsvpWords[rsvpIdx];
   showRsvpWord(word);
   rsvpIdx++;
@@ -1466,6 +1670,7 @@ function rsvpStop() {
   clearTimeout(rsvpTimer);
   rsvpTimer = null;
   rsvpPlayBtn.textContent = '▶ Play';
+  saveReadingPosition();
 }
 
 function rsvpToggle() { rsvpPlaying ? rsvpStop() : rsvpPlay(); }
@@ -1490,6 +1695,17 @@ document.getElementById('rsvpNext').addEventListener('click', () => {
   if (wasPlaying) rsvpPlay();
 });
 
+// Seek slider — jump straight to any word in the passage instead of only being
+// able to restart from the beginning or step 10 words at a time.
+rsvpSeekEl.addEventListener('input', () => {
+  const wasPlaying = rsvpPlaying; rsvpStop();
+  rsvpIdx = Math.min(parseInt(rsvpSeekEl.value, 10) || 0, Math.max(rsvpWords.length - 1, 0));
+  if (rsvpWords[rsvpIdx]) showRsvpWord(rsvpWords[rsvpIdx]);
+  updateRsvpMeta();
+  saveReadingPosition();
+  if (wasPlaying) rsvpPlay();
+});
+
 // Speed
 function setWpm(v) {
   rsvpWpm = parseInt(v, 10);
@@ -1511,9 +1727,8 @@ document.getElementById('readNew').addEventListener('click', () => {
   const p = { id: Date.now(), title: 'New passage', text: '' };
   rsvpLib.unshift(p);
   saveRsvpLib();
-  rsvpCurId = p.id;
   refreshLibDropdown();
-  selectPassage(p.id);
+  selectPassage(p.id);   // saves the outgoing passage's position, then switches
   readTitle.focus();
 });
 
@@ -1533,21 +1748,26 @@ document.getElementById('readDelete').addEventListener('click', () => {
   if (!confirm('Delete this passage?')) return;
   rsvpLib = rsvpLib.filter(x => String(x.id) !== String(rsvpCurId));
   saveRsvpLib();
-  rsvpCurId = rsvpLib[0] ? rsvpLib[0].id : null;
-  refreshLibDropdown();
-  if (rsvpCurId != null) selectPassage(rsvpCurId);
-  else { readTitle.value = ''; readContent.value = ''; prepareWords(); }
+  const nextId = rsvpLib[0] ? rsvpLib[0].id : null;
+  if (nextId != null) {
+    selectPassage(nextId);   // deleted passage is already gone from rsvpLib, so nothing stale gets saved
+  } else {
+    rsvpCurId = null;
+    refreshLibDropdown();
+    readTitle.value = ''; readContent.value = ''; prepareWords();
+  }
 });
 
 // Re-tokenize as the user types, so play always reflects the latest text.
-readContent.addEventListener('input', prepareWords);
+// Editing the text invalidates any remembered position, so this always resets.
+readContent.addEventListener('input', () => prepareWords(true));
 
 // Open / close modal
 function openReader() {
   loadRsvpLib();
   refreshLibDropdown();
-  if (rsvpCurId == null && rsvpLib[0]) rsvpCurId = rsvpLib[0].id;
-  if (rsvpCurId != null) selectPassage(rsvpCurId);
+  const idToOpen = rsvpCurId != null ? rsvpCurId : (rsvpLib[0] && rsvpLib[0].id);
+  if (idToOpen != null) selectPassage(idToOpen);
   setWpm(rsvpWpm);
   readModal.classList.add('show');
 }
@@ -1567,6 +1787,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
+applyLogCollapsed();
+renderIdeas();
 render();
 taskInput.focus();
 </script>
