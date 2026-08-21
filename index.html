@@ -276,6 +276,8 @@
     .docs-input:focus { border-color: #aaa; }
     textarea.docs-input { min-height: 130px; line-height: 1.45; resize: vertical; }
     textarea.docs-transcript { min-height: 80px; color: #555; }
+    textarea.docs-ask { min-height: 54px; }
+    .docs-ask-btn { flex: 0 0 auto; background: #ecf0f1; color: #444; padding: 10px 18px; }
 
     .docs-drop {
       display: block; border: 1px dashed #c7ccd1; border-radius: 10px;
@@ -611,8 +613,13 @@
         <span id="docsDropText">Tap to choose a recording — or drop one here</span>
       </label>
 
+      <label class="docs-label" for="docsQuestions">Anything specific to capture? (optional)</label>
+      <textarea class="docs-input docs-ask" id="docsQuestions"
+                placeholder="One question per line — e.g. What did I promise the client?&#10;Any blockers I mentioned?"></textarea>
+
       <div class="docs-row">
         <button class="docs-run" id="docsTranscribe" disabled>Transcribe &amp; write notes</button>
+        <button class="docs-ask-btn" id="docsAsk">Ask</button>
       </div>
       <div class="docs-bar" id="docsBar"><i id="docsBarFill"></i></div>
 
@@ -2166,6 +2173,8 @@ const docsTitleEl    = document.getElementById('docsTitle');
 const docsBodyEl     = document.getElementById('docsBody');
 const docsNotesEl    = document.getElementById('docsNotes');
 const docsTranscript = document.getElementById('docsTranscript');
+const docsQuestionsEl = document.getElementById('docsQuestions');
+const docsAskBtn      = document.getElementById('docsAsk');
 const docsStatusEl   = document.getElementById('docsStatus');
 const docsDrop       = document.getElementById('docsDrop');
 const docsDropText   = document.getElementById('docsDropText');
@@ -2190,6 +2199,7 @@ function docProgress(frac) {
 function setDocsEnabled(on) {
   docsSaveBtn.disabled = !on;
   docsRunBtn.disabled  = !on || !audioFile;
+  docsAskBtn.disabled  = !on;
 }
 
 // dd-mm-yy_Day — e.g. 22-08-26_Saturday. Drive treats "/" as an ordinary
@@ -2337,16 +2347,62 @@ async function transcribe(file, onStep) {
   return parts.join('\n\n');
 }
 
-function draftNotes(transcript) {
+// The two work-log headings are required and always present. If the recording
+// doesn't cover one, the model says so under the heading rather than dropping it,
+// so a day's log always answers the same questions and stays comparable.
+function draftNotes(transcript, questions) {
+  const qs = (questions || '').trim();
   return gemini([{ text:
-    'Below is the transcript of a work voice note. Turn it into clear written ' +
-    'documentation that someone could read later without hearing the recording.\n\n' +
-    'Use Markdown. Open with a two or three sentence summary, then use whatever ' +
-    'sections genuinely fit — commonly Key points, Decisions, Action items (naming ' +
-    'the owner where one is given), and Open questions. Leave out any section the ' +
-    'transcript has nothing for rather than padding it. Keep the speaker\'s meaning ' +
-    'and their specifics; do not invent anything that is not in the transcript.\n\n' +
+    'Below is the transcript of a work voice note. Turn it into a clear daily work ' +
+    'log that someone could read later without hearing the recording. Use Markdown.\n\n' +
+    'Open with a two or three sentence summary. Then ALWAYS include these two ' +
+    'sections, with exactly these headings, in this order:\n\n' +
+    '## What I did today\n' +
+    '## Tasks I took on or was assigned\n\n' +
+    'Under the tasks heading, name who owns each task where the recording says so, ' +
+    'and include any deadline mentioned. If the transcript genuinely does not cover ' +
+    'one of those two sections, write \"Nothing mentioned.\" under that heading — keep ' +
+    'the heading either way, and never invent content to fill it.\n\n' +
+    'After those two, add any of Key points, Decisions, and Open questions that the ' +
+    'recording actually supports, and leave out the ones it does not.\n\n' +
+    (qs ? 'Finally add a \"## Questions\" section answering each question below from ' +
+          'the recording, repeating the question in bold before its answer. Where the ' +
+          'recording does not answer one, say so plainly instead of guessing.\n\n' +
+          'QUESTIONS:\n' + qs + '\n\n' : '') +
+    'Keep the speaker\'s meaning and their specifics. Do not invent anything that is ' +
+    'not in the transcript.\n\n' +
     'TRANSCRIPT:\n' + transcript }]);
+}
+
+// Ask something about a transcript that has already been produced, and append the
+// answer to the notes — so a follow-up question doesn't mean transcribing again.
+async function askAboutRecording() {
+  if (docsBusy) return;
+  const q = docsQuestionsEl.value.trim();
+  const t = docsTranscript.value.trim();
+  if (!q) return docStatus('Type a question first.', 'err');
+  if (!t) return docStatus('Nothing to ask about yet — transcribe a recording first.', 'err');
+
+  docsBusy = true; setDocsEnabled(false);
+  try {
+    docStatus('Asking…');
+    const ans = await gemini([{ text:
+      'Answer the questions below using only the transcript of a work voice note that ' +
+      'follows. Repeat each question in bold before its answer, and quote the relevant ' +
+      'part of the transcript where that helps. If the transcript does not answer a ' +
+      'question, say so plainly rather than guessing. Use Markdown.\n\n' +
+      'QUESTIONS:\n' + q + '\n\nTRANSCRIPT:\n' + t }]);
+
+    // Don't stack a second identical heading if the first pass already made one.
+    const hasHeading = /^##\s+Questions\s*$/m.test(docsNotesEl.value);
+    docsNotesEl.value = (docsNotesEl.value.trim() +
+                         (hasHeading ? '\n\n' : '\n\n## Questions\n\n') + ans).trim();
+    docStatus('Answered — added to the notes above.', 'on');
+  } catch (e) {
+    docStatus(e.message, 'err');
+  } finally {
+    docsBusy = false; setDocsEnabled(true);
+  }
 }
 
 // ─── Markdown → HTML, for the Doc ─────────────────────────────────────────────
@@ -2469,6 +2525,7 @@ function clearDocsForm() {
   docsBodyEl.value = '';
   docsNotesEl.value = '';
   docsTranscript.value = '';
+  docsQuestionsEl.value = '';
   audioFile = null;
   docsAudioEl.value = '';
   docsDrop.classList.remove('has');
@@ -2626,8 +2683,8 @@ docsRunBtn.addEventListener('click', async () => {
     const transcript = await transcribe(audioFile, (msg, frac) => { docStatus(msg); docProgress(frac); });
     docsTranscript.value = transcript;
 
-    docStatus('Writing notes from the transcript…'); docProgress(0.95);
-    docsNotesEl.value = await draftNotes(transcript);
+    docStatus('Writing the work log…'); docProgress(0.95);
+    docsNotesEl.value = await draftNotes(transcript, docsQuestionsEl.value);
 
     if (!docsTitleEl.value.trim()) {
       docsTitleEl.value = audioFile.name.replace(/\.[^.]+$/, '');
@@ -2642,6 +2699,7 @@ docsRunBtn.addEventListener('click', async () => {
   }
 });
 
+docsAskBtn.addEventListener('click', askAboutRecording);
 docsSaveBtn.addEventListener('click', saveDocEntry);
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
