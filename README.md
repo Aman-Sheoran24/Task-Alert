@@ -5,6 +5,7 @@ An Eisenhower (Urgent–Important) task board that schedules its reminders as **
 - **Each task with a deadline** becomes a calendar event with popup reminders **5 hours** and **2 hours** before. The task name is the notification.
 - **Every day at 10:00** a recurring "Urgent + Important — daily review" event fires, with your current Q1 tasks listed in its description.
 - **Your task list syncs across every device** through a hidden, app-private file in your own Google Drive (`appDataFolder`). Sign in on any device and the same tasks appear. The alerts live in your Google Calendar. Nothing is sent to any third party.
+- **Work Documentation** — write notes by hand, or upload a voice recording and have Gemini transcribe it and draft the notes for you. Each entry is saved as a real Google Doc under `Work Documentation / dd-mm-yy_Day` in your Drive.
 - **Completed tasks are logged** in an Activity log below the board, showing whether each was on time or delayed and how long it took.
 - **Fast Reading practice** — a built-in RSVP speed-reading trainer: save your own passages and read them one word at a time at an adjustable speed. (See `CHANGES.md` for details and sources.)
 
@@ -40,11 +41,11 @@ git push -u origin main
 
 ### 3. Create a Google OAuth Client ID
 1. Go to https://console.cloud.google.com → create a project (any name).
-2. **APIs & Services → Library →** enable **both**: search **Google Calendar API → Enable**, then search **Google Drive API → Enable**. (Calendar = the alerts; Drive = the cross-device task sync.)
+2. **APIs & Services → Library →** enable **both**: search **Google Calendar API → Enable**, then search **Google Drive API → Enable**. (Calendar = the alerts; Drive = the cross-device task sync *and* the Work Documentation Docs.)
 3. **APIs & Services → OAuth consent screen**:
    - User type: **External**. Fill the required name/email fields.
    - **Add yourself as a Test user** (your own Google email). Leave it in **Testing** — you do not need Google to "verify" the app for personal use.
-   - Scope: you can leave scopes empty here; the app requests `calendar.events` and `drive.appdata` at sign-in.
+   - Scope: you can leave scopes empty here; the app requests `calendar.events`, `drive.appdata` and `drive.file` at sign-in.
 4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Web application**.
    - **Authorized JavaScript origins** — add both:
@@ -88,4 +89,5 @@ Done. The reminders now fire on their own.
 - **Sign-in is remembered on each device.** The first time on a device you tap **Connect** once and approve; after that the app reconnects to Google silently on later visits and refreshes your session in the background, so you won't normally have to tap Connect again. You'll only be asked to sign in again if you've been signed out of Google itself for a long while. Your existing calendar events keep firing regardless.
 - **Editing or removing a task** updates/deletes its calendar event on the next sync automatically.
 - Must be served over **https** (Vercel) or `http://localhost` — Google sign-in won't run from a `file://` page.
-- Only **`calendar.events`** and **`drive.appdata`** are requested. The app can manage its own events but cannot read the rest of your calendar, and with `drive.appdata` it can only touch its own hidden file — it cannot see any other files in your Drive.
+- Only **`calendar.events`**, **`drive.appdata`** and **`drive.file`** are requested. The app can manage its own events but cannot read the rest of your calendar. `drive.appdata` reaches only its own hidden sync file. `drive.file` is the narrow Drive scope: it covers **just the files and folders this app itself creates** — the Work Documentation folders and Docs — and gives no access to anything else in your Drive.
+- **The Gemini API key never leaves your browser.** It is typed into the Work Documentation panel, kept in that browser's `localStorage`, and sent only to Google's Gemini API. It is not in this repository and not in the deployed page's source.
