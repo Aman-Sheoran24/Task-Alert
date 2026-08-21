@@ -2347,24 +2347,47 @@ async function transcribe(file, onStep) {
   return parts.join('\n\n');
 }
 
-// The two work-log headings are required and always present. If the recording
-// doesn't cover one, the model says so under the heading rather than dropping it,
-// so a day's log always answers the same questions and stays comparable.
+// The standing sections every log carries, in order, each with the instruction
+// that shapes it. All of them are always emitted: where a recording doesn't cover
+// one, the model says so underneath rather than dropping the heading, so every
+// day's log answers the same questions and days stay comparable side by side.
+// Add a heading here and it appears in every future log — nothing else to change.
+const LOG_SECTIONS = [
+  ['## Key notes',
+   'The things from this recording actually worth remembering, as bullets. This is ' +
+   'not a summary: no scene-setting, no narrating that a conversation took place, ' +
+   'no sentences that would read the same for any recording. Straight to the substance.'],
+
+  ['## What I did today',
+   'Work actually carried out or moved forward, as bullets.'],
+
+  ['## Tasks I took on or was assigned',
+   'One bullet per task. Name who owns it wherever the recording says, and include ' +
+   'any deadline mentioned.'],
+
+  ['## Data specifications discussed',
+   'Every data detail raised, in full, as bullets — field and column names, data ' +
+   'types, formats, units, schemas, API contracts, file layouts, volumes and counts, ' +
+   'thresholds, validation rules. Reproduce exact names and exact numbers verbatim: ' +
+   'never round them, generalise them, or compress them away. Err towards too much ' +
+   'detail here rather than too little.'],
+];
+
 function draftNotes(transcript, questions) {
   const qs = (questions || '').trim();
+  const spec = LOG_SECTIONS.map(sec => sec[0] + '\n' + sec[1]).join('\n\n');
+
   return gemini([{ text:
-    'Below is the transcript of a work voice note. Turn it into a clear daily work ' +
-    'log that someone could read later without hearing the recording. Use Markdown.\n\n' +
-    'Open with a two or three sentence summary. Then ALWAYS include these two ' +
-    'sections, with exactly these headings, in this order:\n\n' +
-    '## What I did today\n' +
-    '## Tasks I took on or was assigned\n\n' +
-    'Under the tasks heading, name who owns each task where the recording says so, ' +
-    'and include any deadline mentioned. If the transcript genuinely does not cover ' +
-    'one of those two sections, write \"Nothing mentioned.\" under that heading — keep ' +
-    'the heading either way, and never invent content to fill it.\n\n' +
-    'After those two, add any of Key points, Decisions, and Open questions that the ' +
-    'recording actually supports, and leave out the ones it does not.\n\n' +
+    'Below is the transcript of a work voice note. Turn it into a daily work log ' +
+    'someone could read later without hearing the recording. Use Markdown.\n\n' +
+    'Emit these sections, with exactly these headings, in this order:\n\n' +
+    spec + '\n\n' +
+    'Every one of those headings must appear. Where the transcript genuinely does ' +
+    'not cover a section, write \"Nothing mentioned.\" underneath it — keep the heading ' +
+    'either way, and never invent content to fill one.\n\n' +
+    'Do not open with a summary paragraph. Start straight at the first heading.\n\n' +
+    'After those, add Decisions and Open questions only where the recording actually ' +
+    'supports them, and leave them out otherwise.\n\n' +
     (qs ? 'Finally add a \"## Questions\" section answering each question below from ' +
           'the recording, repeating the question in bold before its answer. Where the ' +
           'recording does not answer one, say so plainly instead of guessing.\n\n' +
