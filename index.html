@@ -505,13 +505,18 @@
 // Paste the OAuth Client ID you create in Google Cloud (see README). NOT a secret.
 const GOOGLE_CLIENT_ID = '574004484248-974don3f0deh34qfufuaupt77dg1lq06.apps.googleusercontent.com';
 
-// Your timezone, and the hour for the daily review (24h clock, local time).
+// Your timezone, and the time of the daily review (24h clock, CAL_TIMEZONE).
+// 10 + 0 = 10:00 AM.  7 + 30 = 7:30 AM.  18 + 45 = 6:45 PM.
+// Change these, redeploy, then hit Re-sync: today's review event moves to the
+// new time in place. Editing the event inside Google Calendar does NOT stick —
+// the next sync rewrites it from here, so this is the one place to set it.
 const CAL_TIMEZONE = 'Asia/Kolkata';
-const DAILY_HOUR   = 10;   // 10 = 10:00 AM
+const DAILY_HOUR   = 11;   // 0-23
+const DAILY_MINUTE = 0;    // 0-59
 
 // Deadline reminders, in minutes before the deadline.
-const REMIND_5H = 300;     // 5 hours
-const REMIND_2H = 120;     // 2 hours
+// const REMIND_5H = 300;     // 5 hours
+// const REMIND_2H = 120;     // 2 hours
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 
@@ -826,14 +831,23 @@ function taskEventBody(t) {
 // is what was flooding the calendar. Instead we create at most one event, dated
 // today, and only when there's actually something to review — so an empty board
 // means no event at all, and a busy board only ever shows on the day it applies to.
+const DAILY_SUMMARY = '🔴 Urgent + Important — daily review';
+
 function dailyEventBody(q1, dateStr) {
-  const hh = pad(DAILY_HOUR);
+  // Clamped so the 15-minute event always ends by 23:59: a start late enough
+  // to spill past midnight would produce an invalid "24:10" and fail the sync.
+  const startMin = Math.max(0, Math.min(DAILY_HOUR * 60 + DAILY_MINUTE, 23 * 60 + 44));
+  const hhmm = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
   return {
-    summary: '🔴 Urgent + Important — daily review',
+    summary: DAILY_SUMMARY,
     description: 'Urgent + Important right now:\n' + q1.map((t, i) => `${i + 1}. ${t.text}`).join('\n'),
-    start: { dateTime: `${dateStr}T${hh}:00:00`, timeZone: CAL_TIMEZONE },
-    end:   { dateTime: `${dateStr}T${hh}:15:00`, timeZone: CAL_TIMEZONE },
+    start: { dateTime: `${dateStr}T${hhmm(startMin)}:00`, timeZone: CAL_TIMEZONE },
+    end:   { dateTime: `${dateStr}T${hhmm(startMin + 15)}:00`, timeZone: CAL_TIMEZONE },
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] },
+    // Marker Google stores on the event and lets us query back by. This is what
+    // makes today's review event findable from ANY device, so we update the one
+    // that already exists instead of adding another. See findDailyEvents().
+    extendedProperties: { private: { [DAILY_MARKER_KEY]: DAILY_MARKER_VAL } },
   };
 }
 
@@ -881,8 +895,52 @@ async function syncCalendar() {
   }
 }
 
-const DAILY_EVENT_KEY   = 'tm_daily_event_v2';   // JSON {id, date} for today's single-day event
+const DAILY_EVENT_KEY   = 'tm_daily_event_v2';   // JSON {id, date} — per-device hint, now only a fallback
 const LEGACY_DAILY_KEY  = 'tm_daily_event';       // old infinitely-recurring event id, one-time cleanup
+
+// Marker stamped onto every review event we create (see dailyEventBody). Google
+// stores it on the event and lets us search events BY it, which is the whole
+// point: the previous code remembered the event id in localStorage, so a second
+// device — or the same device after clearing site data, or a second browser —
+// had no idea an event already existed and cheerfully made another one. Nothing
+// ever removed the extras, so they piled up and every copy fired its own alarm.
+const DAILY_MARKER_KEY = 'tmDailyReview';
+const DAILY_MARKER_VAL = '1';
+
+// Every review event of ours in today's window. Two passes, because events made
+// before this fix carry no marker:
+//   1. by marker  — exact; catches everything created from now on, any device
+//   2. today's events, filtered by title — catches the pre-existing duplicates
+//      so they get cleaned up too
+// Pass 2 reads the day's events rather than using Calendar's text search, whose
+// matching on an emoji title isn't something to depend on. BOTH passes keep only
+// an exact DAILY_SUMMARY match, so we can never delete an event that isn't ours.
+async function findDailyEvents() {
+  const from = new Date(); from.setHours(0, 0, 0, 0);
+  const to   = new Date(from); to.setDate(to.getDate() + 1);
+
+  const base = '/calendars/primary/events?singleEvents=true&orderBy=startTime' +
+               '&timeMin=' + encodeURIComponent(from.toISOString()) +
+               '&timeMax=' + encodeURIComponent(to.toISOString());
+
+  const found = new Map();   // id -> event, de-duped across both passes
+  const collect = (res) => {
+    for (const ev of (res && res.items) || []) {
+      if (ev.id && ev.summary === DAILY_SUMMARY) found.set(ev.id, ev);
+    }
+  };
+
+  collect(await gcal('GET', base + '&maxResults=50' +
+    '&privateExtendedProperty=' + encodeURIComponent(DAILY_MARKER_KEY + '=' + DAILY_MARKER_VAL)));
+
+  try {
+    collect(await gcal('GET', base + '&maxResults=250'));
+  } catch (e) {
+    if (e.message === 'expired') throw e;   // legacy sweep is best-effort
+  }
+
+  return Array.from(found.values());
+}
 
 async function syncDailyEvent() {
   // One-time migration: the old scheme created a never-ending RRULE:FREQ=DAILY
@@ -899,24 +957,41 @@ async function syncDailyEvent() {
   const q1 = tasks.filter(t => !t.done && !t.deleted && t.quad === 1);
   const today = todayStr();
 
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(DAILY_EVENT_KEY) || 'null'); } catch (_) {}
-  if (saved && saved.date !== today) saved = null;   // that event was for a past day; nothing to clean up, it doesn't recur
+  // Ask Calendar what is actually there rather than trusting this device's memory.
+  let existing = [];
+  try {
+    existing = await findDailyEvents();
+  } catch (e) {
+    if (e.message === 'expired') throw e;
+    // Couldn't list (offline, quota, ...). Fall back to this device's own id so
+    // that a failed lookup can't be the reason we add yet another copy.
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(DAILY_EVENT_KEY) || 'null'); } catch (_) {}
+    if (saved && saved.id && saved.date === today) existing = [{ id: saved.id }];
+  }
+
+  const drop = async (id) => {
+    try { await gcal('DELETE', '/calendars/primary/events/' + id); }
+    catch (e) { if (e.message === 'expired') throw e; }   // already gone is fine
+  };
 
   if (!q1.length) {
-    // Nothing urgent+important right now — don't create a nag event for today.
-    if (saved && saved.id) {
-      try { await gcal('DELETE', '/calendars/primary/events/' + saved.id); }
-      catch (e) { if (e.message === 'expired') throw e; }
-    }
+    // Nothing urgent+important right now — clear every review event, don't nag.
+    for (const ev of existing) await drop(ev.id);
     localStorage.removeItem(DAILY_EVENT_KEY);
     return;
   }
 
+  // Keep the first, delete the rest. This is the self-heal: a calendar that
+  // already carries five copies collapses back to a single event on next sync.
+  for (const ev of existing.slice(1)) await drop(ev.id);
+
   const body = dailyEventBody(q1, today);
-  if (saved && saved.id) {
+  const keep = existing[0];
+  if (keep) {
     try {
-      await gcal('PUT', '/calendars/primary/events/' + saved.id, body);
+      await gcal('PUT', '/calendars/primary/events/' + keep.id, body);
+      localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: keep.id, date: today }));
       return;
     } catch (e) {
       if (e.message === 'expired') throw e;
@@ -927,15 +1002,30 @@ async function syncDailyEvent() {
   localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: ev.id, date: today }));
 }
 
+// Only ever one sync in flight. Two overlapping runs was the other way copies
+// appeared: a sync takes a network round-trip per task, so an edit part-way
+// through (or the sync on connect, which isn't debounced) could start a second
+// run while the first was still going. Both would look for today's event, both
+// would see none yet, and both would create one.
+let syncing    = false;
+let syncQueued = false;
+
 // Reconcile calendar, then push the (event-id-stamped) task list to Drive.
 async function syncAll() {
-  await syncCalendar();
-  if (!gcalConnected) return;        // syncCalendar may have hit 'expired'
+  if (syncing) { syncQueued = true; return; }   // coalesce into one follow-up run
+  syncing = true;
   try {
-    await saveToDrive();
-    setGcalStatus('Synced · tasks + alerts ' + new Date().toLocaleTimeString(), 'on');
-  } catch (e) {
-    if (e.message !== 'expired') setGcalStatus('Drive sync error: ' + e.message, 'err');
+    await syncCalendar();
+    if (!gcalConnected) return;      // syncCalendar may have hit 'expired'
+    try {
+      await saveToDrive();
+      setGcalStatus('Synced · tasks + alerts ' + new Date().toLocaleTimeString(), 'on');
+    } catch (e) {
+      if (e.message !== 'expired') setGcalStatus('Drive sync error: ' + e.message, 'err');
+    }
+  } finally {
+    syncing = false;
+    if (syncQueued) { syncQueued = false; scheduleSync(); }
   }
 }
 
