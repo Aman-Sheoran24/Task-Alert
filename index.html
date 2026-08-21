@@ -315,6 +315,8 @@
       border: none; border-radius: 8px; padding: 8px 11px;
       font-size: 12px; cursor: pointer; background: #ecf0f1; color: #444;
     }
+    .docs-keystate { font-size: 10.5px; font-weight: 700; color: #c0392b; margin-bottom: 6px; }
+    .docs-keystate.ok { color: #1a7f37; }
     .docs-hint { font-size: 10.5px; color: #aaa; line-height: 1.45; margin-bottom: 12px; }
 
     .docs-recent { border-top: 1px solid #eee; padding-top: 10px; }
@@ -631,11 +633,14 @@
     <label class="docs-label">Gemini API key — for voice notes only</label>
     <div class="docs-key-row">
       <input id="docsKey" type="password" autocomplete="off" placeholder="Paste your Gemini API key">
-      <button id="docsKeySave">Save</button>
+      <button id="docsKeyShow" title="Show or hide the key">👁</button>
+      <button id="docsKeyClear">Clear</button>
     </div>
+    <div class="docs-keystate" id="docsKeyState"></div>
     <div class="docs-hint">
-      Get one at aistudio.google.com/apikey. It is kept in this browser's local storage only —
-      it never goes into the repo, and is sent nowhere except Google's Gemini API.
+      Saved in this browser as you type — you should only ever have to paste it once.
+      Get one at aistudio.google.com/apikey. It never goes into the repo, and is sent
+      nowhere except Google's Gemini API.
     </div>
 
     <div class="docs-recent">
@@ -2198,7 +2203,9 @@ function docsFolderName(d) {
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 
 async function gemini(parts) {
-  const key = (localStorage.getItem(GEMINI_KEY) || '').trim();
+  // Fall back to whatever is in the box, so a key that was just typed works
+  // immediately rather than only after it has been written to storage.
+  const key = (localStorage.getItem(GEMINI_KEY) || docsKeyEl.value || '').trim();
   if (!key) throw new Error('Add your Gemini API key at the bottom of this panel first');
 
   const r = await fetch(
@@ -2556,6 +2563,7 @@ function pickAudio(file) {
 document.getElementById('docsLaunch').addEventListener('click', () => {
   docsModal.classList.add('show');
   docsKeyEl.value = localStorage.getItem(GEMINI_KEY) || '';
+  renderKeyState();
   renderDocsList();
 });
 document.getElementById('docsClose').addEventListener('click', () => docsModal.classList.remove('show'));
@@ -2573,10 +2581,42 @@ docsDrop.addEventListener('drop', e => {
   pickAudio(e.dataTransfer.files && e.dataTransfer.files[0]);
 });
 
-document.getElementById('docsKeySave').addEventListener('click', () => {
+// The key saves itself as you type. It used to save only when a button was
+// pressed, which is how you could end up retyping it on every visit — typing it
+// and going straight to Transcribe left nothing stored.
+function persistGeminiKey() {
   const v = docsKeyEl.value.trim();
-  if (v) { localStorage.setItem(GEMINI_KEY, v); docStatus('Gemini key saved in this browser.', 'on'); }
-  else   { localStorage.removeItem(GEMINI_KEY); docStatus('Gemini key cleared.'); }
+  if (v) localStorage.setItem(GEMINI_KEY, v);
+  else   localStorage.removeItem(GEMINI_KEY);
+  renderKeyState();
+}
+
+// Say plainly whether a key is stored, and show the last four characters so you
+// can tell one key from another without revealing the whole secret.
+function renderKeyState() {
+  const k  = (localStorage.getItem(GEMINI_KEY) || '').trim();
+  const el = document.getElementById('docsKeyState');
+  el.textContent = k ? '\u2713 Key saved in this browser (\u2026' + k.slice(-4) + ')'
+                     : 'No key saved yet \u2014 voice notes need one.';
+  el.className = 'docs-keystate' + (k ? ' ok' : '');
+}
+
+let keySaveTimer = null;
+docsKeyEl.addEventListener('input', () => {
+  clearTimeout(keySaveTimer);
+  keySaveTimer = setTimeout(persistGeminiKey, 400);
+});
+docsKeyEl.addEventListener('blur', persistGeminiKey);
+
+document.getElementById('docsKeyShow').addEventListener('click', () => {
+  docsKeyEl.type = docsKeyEl.type === 'password' ? 'text' : 'password';
+});
+
+document.getElementById('docsKeyClear').addEventListener('click', () => {
+  docsKeyEl.value = '';
+  localStorage.removeItem(GEMINI_KEY);
+  renderKeyState();
+  docStatus('Gemini key cleared.');
 });
 
 docsRunBtn.addEventListener('click', async () => {
@@ -2608,6 +2648,7 @@ docsSaveBtn.addEventListener('click', saveDocEntry);
 applyLogCollapsed();
 renderIdeas();
 renderDocsList();
+renderKeyState();
 render();
 taskInput.focus();
 </script>
