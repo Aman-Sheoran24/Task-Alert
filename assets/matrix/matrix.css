@@ -1,0 +1,176 @@
+/* Four-quadrant chart and key notes
+   The Eisenhower matrix itself, its task cards, the Notes & Ideas panel, and
+   the completed-task activity log.
+   Part of Task Matrix. Loaded by index.html; see the load-order note there. */
+    /* Matrix */
+    .matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .quadrant {
+      border-radius: 10px; padding: 10px;
+      display: flex; flex-direction: column;
+      border-left: 4px solid; min-height: 170px;
+      transition: transform 0.12s, opacity 0.12s;
+    }
+    .quadrant.drag-over {
+      transform: scale(0.97); opacity: 0.75;
+      outline: 2px dashed #aaa; outline-offset: -2px;
+    }
+
+    .q-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .q-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .q-count { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; background: rgba(0,0,0,0.1); }
+
+    .q1 { border-color: #e74c3c; background: #fdedec; }
+    .q1 .q-label { color: #922b21; }
+    .q2 { border-color: #e67e22; background: #fef5ec; }
+    .q2 .q-label { color: #935116; }
+    .q3 { border-color: #27ae60; background: #eafaf1; }
+    .q3 .q-label { color: #1a5276; }
+    .q4 { border-color: #95a5a6; background: #f2f3f4; }
+    .q4 .q-label { color: #616a6b; }
+
+    /* Task list */
+    .task-list { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .empty-msg { color: #ccc; font-size: 12px; text-align: center; padding: 16px 0; }
+
+    /* Task card */
+    .task {
+      position: relative;
+      background: white; border-radius: 6px; padding: 8px;
+      font-size: 13px; border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      user-select: none; touch-action: manipulation;
+    }
+    .task.dragging { opacity: 0.35; }
+    .task.done .task-text { text-decoration: line-through; color: #aaa; }
+
+    /* Braille-style drag handle */
+    .task-handle {
+      color: #ccc; font-size: 12px; cursor: grab;
+      display: block; margin-bottom: 3px; letter-spacing: 1px;
+    }
+
+    .task-text { line-height: 1.4; margin-bottom: 5px; word-break: break-word; }
+
+    .task-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; margin-right: 4px;
+    }
+    .overdue { background: #e74c3c; color: white; }
+    .soon    { background: #f39c12; color: white; }
+    .later   { background: #3498db; color: white; }
+    .alarm   { background: #6c5ce7; color: white; }
+
+    .task-actions { display: flex; gap: 4px; }
+    .task-btn {
+      flex: 1; padding: 4px; font-size: 12px;
+      border: 1px solid #eee; border-radius: 4px;
+      background: #fafafa; cursor: pointer;
+    }
+    .task-btn:hover, .task-btn:active { background: #efefef; }
+    .task-btn.green { color: #27ae60; border-color: #a9dfbf; }
+    .task-btn.red   { color: #e74c3c; }
+    .task-btn.dots  { flex: 0 0 36px; font-weight: 700; letter-spacing: 1px; }
+
+    /* Per-task notes / comments (a task can have several) */
+    .task-notes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 5px; }
+    .task-note {
+      font-size: 12px; color: #555; background: #f6f7f9;
+      border: 1px solid #ececf0; border-radius: 5px;
+      padding: 5px 8px;
+      display: flex; align-items: flex-start; gap: 6px;
+    }
+    .task-note .note-text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+    .task-note .note-del {
+      border: none; background: none; color: #bbb; font-size: 12px;
+      cursor: pointer; line-height: 1; padding: 1px 2px; flex-shrink: 0;
+    }
+    .task-note .note-del:hover, .task-note .note-del:active { color: #e74c3c; }
+
+    /* 3-dot task menu (pops up above the action row) */
+    .task-menu {
+      position: absolute; right: 6px; bottom: 40px; z-index: 60;
+      min-width: 150px; background: #fff;
+      border: 1px solid #e3e6ea; border-radius: 9px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+      overflow: hidden; display: none;
+    }
+    .task-menu.open { display: block; }
+    .task-menu button {
+      display: block; width: 100%; text-align: left;
+      border: none; background: #fff; color: #333;
+      padding: 10px 12px; font-size: 13px; cursor: pointer;
+    }
+    .task-menu button:hover, .task-menu button:active { background: #f2f3f5; }
+
+    /* Edit mode */
+    .task-edit {
+      width: 100%; padding: 5px; border: 1.5px solid #3498db; border-radius: 4px;
+      font-size: 13px; font-family: inherit; resize: none; outline: none;
+      margin-bottom: 5px; line-height: 1.4;
+    }
+
+    /* Touch drag ghost */
+    .drag-ghost {
+      position: fixed; pointer-events: none; z-index: 9999;
+      background: white; padding: 8px 10px; border-radius: 8px;
+      font-size: 13px; line-height: 1.4; max-width: 150px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      transform: translateX(-50%) rotate(2deg);
+      opacity: 0.92; word-break: break-word;
+    }
+
+    /* Status */
+    .status { font-size: 11px; color: #aaa; text-align: center; margin-top: 8px; min-height: 18px; }
+
+    /* Modal */
+    /* ── Notes & Ideas (free-form, not tasks) ─────────────────────── */
+    .notes-section {
+      background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+      padding: 10px; margin-top: 12px;
+    }
+    .notes-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .notes-title .log-count { background: rgba(0,0,0,0.1); border-radius: 9px; padding: 1px 6px; margin-left: 4px; font-size: 10px; }
+    .idea-input-row { display: flex; gap: 6px; margin: 8px 0; }
+    .idea-input-row textarea {
+      flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 13px; font-family: inherit; resize: vertical; outline: none;
+    }
+    .idea-input-row textarea:focus { border-color: #aaa; }
+    .idea-add { border: none; border-radius: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer; background: #34495e; color: #fff; }
+    .idea-add:active { opacity: 0.8; }
+    .idea-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .idea-item { border: 1px solid #eee; border-radius: 8px; padding: 7px 9px; background: #fafbfc; }
+    .idea-text { font-size: 13px; color: #444; white-space: pre-wrap; word-break: break-word; margin-bottom: 4px; }
+    .idea-bottom { display: flex; align-items: center; justify-content: space-between; }
+    .idea-when { font-size: 10px; color: #aaa; }
+    .idea-del { border: none; background: none; color: #bbb; font-size: 12px; cursor: pointer; padding: 1px 2px; }
+    .idea-del:hover, .idea-del:active { color: #e74c3c; }
+
+    /* ── Completed-task log ───────────────────────────────────────── */
+    .log-section {
+      background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+      padding: 10px; margin-top: 12px;
+    }
+    .log-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .log-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; cursor: pointer; }
+    .log-title .log-count { background: rgba(0,0,0,0.1); border-radius: 9px; padding: 1px 6px; margin-left: 4px; font-size: 10px; }
+    .log-head-actions { display: flex; gap: 6px; }
+    .log-toggle, .log-clear { border: none; background: #f2f3f4; color: #888; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+    .log-toggle:active, .log-clear:active { opacity: 0.7; }
+    .log-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .log-list.collapsed { display: none; }
+    .log-item { border: 1px solid #eee; border-radius: 8px; padding: 7px 9px; background: #fafbfc; }
+    .log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .log-when { font-size: 10px; color: #aaa; margin-left: auto; }
+    .log-text { font-size: 13px; color: #444; word-break: break-word; }
+    .log-detail { font-size: 11px; color: #777; margin-top: 3px; line-height: 1.35; }
+    .log-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; color: #fff; }
+    .log-badge.done   { background: #16a085; }
+    .log-badge.ontime { background: #27ae60; }
+    .log-badge.late   { background: #e74c3c; }
+    .log-reopen { background: none; border: none; color: #3498db; font-size: 11px; cursor: pointer; padding: 2px 0; margin-top: 4px; }
+

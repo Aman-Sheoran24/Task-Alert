@@ -1,0 +1,91 @@
+/* Work Documentation
+   The panel for written notes and Gemini-transcribed voice recordings.
+   Part of Task Matrix. Loaded by index.html; see the load-order note there. */
+    /* ── Work Documentation ───────────────────────────────────────── */
+    .docs-launch {
+      width: 100%; margin-top: 8px; padding: 11px;
+      border: none; border-radius: 10px; background: #6c5ce7; color: #fff;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .docs-launch:active { opacity: 0.85; }
+
+    .docs-box { max-width: 520px; width: 92%; max-height: 92vh; overflow-y: auto; }
+    .docs-box h3 { display: flex; align-items: center; justify-content: space-between; }
+
+    .docs-modes { display: flex; gap: 6px; margin-bottom: 12px; }
+    .docs-modes button {
+      flex: 1; padding: 9px; border: 1px solid #ddd; background: #fff; color: #666;
+      border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .docs-modes button.on { background: #6c5ce7; border-color: #6c5ce7; color: #fff; }
+    .docs-pane { display: none; }
+    .docs-pane.on { display: block; }
+
+    .docs-label {
+      font-size: 10.5px; color: #999; display: block; margin-bottom: 4px;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .docs-input {
+      width: 100%; padding: 9px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 13px; margin-bottom: 10px; outline: none; font-family: inherit;
+    }
+    .docs-input:focus { border-color: #aaa; }
+    textarea.docs-input { min-height: 130px; line-height: 1.45; resize: vertical; }
+    textarea.docs-transcript { min-height: 80px; color: #555; }
+    textarea.docs-ask { min-height: 54px; }
+    .docs-ask-btn { flex: 0 0 auto; background: #ecf0f1; color: #444; padding: 10px 18px; }
+
+    .docs-drop {
+      display: block; border: 1px dashed #c7ccd1; border-radius: 10px;
+      padding: 18px 12px; text-align: center; font-size: 12px; color: #777;
+      cursor: pointer; margin-bottom: 10px; background: #fafbfc; line-height: 1.4;
+    }
+    .docs-drop.has { border-color: #6c5ce7; color: #4b3fc4; background: #f3f1ff; font-weight: 600; }
+    .docs-drop.over { border-color: #6c5ce7; background: #efecff; }
+    .docs-drop input { display: none; }
+
+    .docs-row { display: flex; gap: 6px; margin-bottom: 10px; }
+    .docs-row button {
+      flex: 1; border: none; border-radius: 8px; padding: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .docs-run  { background: #6c5ce7; color: #fff; }
+    .docs-save { background: #2ecc71; color: #fff; }
+    .docs-row button:disabled { background: #c9ccd1; cursor: default; }
+
+    .docs-status { font-size: 11px; color: #666; min-height: 15px; margin-bottom: 8px; line-height: 1.4; }
+    .docs-status.on  { color: #1a7f37; font-weight: 600; }
+    .docs-status.err { color: #c0392b; }
+
+    .docs-bar {
+      height: 4px; background: #eceef1; border-radius: 3px;
+      overflow: hidden; margin-bottom: 10px; display: none;
+    }
+    .docs-bar.on { display: block; }
+    .docs-bar i { display: block; height: 100%; width: 0; background: #6c5ce7; transition: width 0.25s; }
+
+    .docs-key-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .docs-key-row input {
+      flex: 1; min-width: 0; padding: 8px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 12px; outline: none;
+    }
+    .docs-key-row button {
+      border: none; border-radius: 8px; padding: 8px 11px;
+      font-size: 12px; cursor: pointer; background: #ecf0f1; color: #444;
+    }
+    .docs-keystate { font-size: 10.5px; font-weight: 700; color: #c0392b; margin-bottom: 6px; }
+    .docs-keystate.ok { color: #1a7f37; }
+    .docs-hint { font-size: 10.5px; color: #aaa; line-height: 1.45; margin-bottom: 12px; }
+
+    .docs-recent { border-top: 1px solid #eee; padding-top: 10px; }
+    .docs-entry {
+      display: flex; align-items: baseline; gap: 8px;
+      padding: 7px 0; border-bottom: 1px solid #f4f4f4; font-size: 12px;
+    }
+    .docs-entry:last-child { border-bottom: none; }
+    .docs-entry a {
+      color: #3498db; text-decoration: none; font-weight: 600;
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .docs-entry span { color: #b0b0b0; font-size: 10.5px; flex-shrink: 0; }
+
