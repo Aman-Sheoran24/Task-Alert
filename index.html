@@ -185,6 +185,7 @@
     <div class="docs-modes">
       <button id="docsModeWrite" class="on">✍️ Write</button>
       <button id="docsModeVoice">🎙️ Voice note</button>
+      <button id="docsModeCompile">📚 Compile</button>
     </div>
 
     <label class="docs-label" for="docsTitle">Title</label>
@@ -224,8 +225,38 @@
                 placeholder="The verbatim transcript lands here, and is appended to the Doc."></textarea>
     </div>
 
+    <!-- Compile a date range of saved entries into one review -->
+    <div class="docs-pane" id="docsPaneCompile">
+      <div class="docs-hint">
+        Gathers the notes from every entry you have saved in the range into a single
+        review. It works only from what is already in your logs — nothing is invented,
+        and nothing is dressed up.
+      </div>
+      <div class="docs-range">
+        <div>
+          <label class="docs-label" for="docsFrom">From</label>
+          <input class="docs-input" id="docsFrom" type="date">
+        </div>
+        <div>
+          <label class="docs-label" for="docsTo">To</label>
+          <input class="docs-input" id="docsTo" type="date">
+        </div>
+      </div>
+      <div class="docs-row">
+        <button class="docs-run" id="docsCompile">Compile the range</button>
+      </div>
+      <label class="docs-label" for="docsReview">Review</label>
+      <textarea class="docs-input" id="docsReview"
+                placeholder="The consolidated review lands here — read and edit it before saving."></textarea>
+      <div class="docs-row">
+        <button class="docs-save" id="docsSaveReview">Save review to Drive</button>
+      </div>
+      <label class="docs-label">Monthly work logs</label>
+      <div id="docsRollups"></div>
+    </div>
+
     <div class="docs-status" id="docsStatus"></div>
-    <div class="docs-row">
+    <div class="docs-row" id="docsSaveRow">
       <button class="docs-save" id="docsSave">Save to Drive</button>
     </div>
 

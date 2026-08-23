@@ -425,22 +425,34 @@ function clearDocsForm() {
   setDocsEnabled(true);
 }
 
-async function saveDocEntry() {
-  if (docsBusy) return;
-
+// True when we can actually write to Drive. Adding drive.file to the scope list
+// only takes effect once approved, and a remembered device gets a silent token
+// carrying the OLD scopes — so ask explicitly rather than failing later with a
+// confusing 403. Shared by both save paths.
+function driveReady() {
   if (!gcalConnected || !accessToken) {
-    return docStatus('Connect Google first — the button at the top of the page.', 'err');
+    docStatus('Connect Google first — the button at the top of the page.', 'err');
+    return false;
   }
-  // Adding drive.file to the scope list only takes effect once you approve it.
-  // A remembered device gets a silent token carrying the OLD scopes, so ask
-  // explicitly rather than failing with a confusing 403 from Drive.
   if (!driveFileGranted) {
     docStatus('This needs permission to create Drive files — approve it and the save will continue…');
     pendingDocSave = true;
     try { tokenClient.requestAccessToken({ prompt: 'consent' }); }
     catch (_) { pendingDocSave = false; }
-    return;
+    return false;
   }
+  return true;
+}
+
+// One place the index is written, so every caller also mirrors it to storage.
+function saveDocsIndex() {
+  docs = docs.slice(0, 400);
+  localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+}
+
+async function saveDocEntry() {
+  if (docsBusy) return;
+  if (!driveReady()) return;
 
   const isVoice    = docsMode === 'voice';
   const notes      = (isVoice ? docsNotesEl.value : docsBodyEl.value).trim();
@@ -469,16 +481,31 @@ async function saveDocEntry() {
     const made = await createDoc(title + ' — ' + folder,
                                  '<html><body>' + html + '</body></html>', folderId);
 
+    // The notes are kept alongside the link so the monthly rollup and the range
+    // compile can be built without re-reading every Doc back out of Drive. The
+    // transcript is deliberately not kept — it lives in the daily Doc, and a
+    // month of them would not fit in a single rollup anyway.
     docs.unshift({
-      id: Date.now(), title: title, folder: folder, createdAt: Date.now(), docId: made.id,
+      id: Date.now(), title: title, folder: folder, date: isoDate(when),
+      createdAt: Date.now(), docId: made.id, notes: notes,
       url: made.webViewLink || ('https://docs.google.com/document/d/' + made.id + '/edit'),
     });
-    docs = docs.slice(0, 50);
-    localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+    saveDocsIndex();
     renderDocsList();
 
-    docStatus('Saved · ' + DOCS_ROOT + ' / ' + folder, 'on');
+    docStatus('Saved · ' + DOCS_ROOT + ' / ' + folder + ' · updating the monthly log…', 'on');
     clearDocsForm();
+
+    // Best-effort: the entry is already safely saved, so a rollup failure should
+    // report itself without looking like the save failed.
+    try {
+      await rebuildRollup(isoDate(when).slice(0, 7));
+      docStatus('Saved · ' + DOCS_ROOT + ' / ' + folder + ' · monthly log updated', 'on');
+    } catch (e) {
+      if (e.message !== 'expired') {
+        docStatus('Entry saved. The monthly log could not be updated: ' + e.message, 'err');
+      }
+    }
   } catch (e) {
     docStatus(e.message === 'expired'
       ? 'Google session expired — tap Re-sync at the top, then save again.'
@@ -492,10 +519,14 @@ async function saveDocEntry() {
 
 function setDocsMode(mode) {
   docsMode = mode;
-  document.getElementById('docsModeWrite').classList.toggle('on', mode === 'write');
-  document.getElementById('docsModeVoice').classList.toggle('on', mode === 'voice');
-  document.getElementById('docsPaneWrite').classList.toggle('on', mode === 'write');
-  document.getElementById('docsPaneVoice').classList.toggle('on', mode === 'voice');
+  for (const m of ['Write', 'Voice', 'Compile']) {
+    const on = mode === m.toLowerCase();
+    document.getElementById('docsMode' + m).classList.toggle('on', on);
+    document.getElementById('docsPane' + m).classList.toggle('on', on);
+  }
+  // Compile has its own save button; the shared one would be ambiguous there.
+  document.getElementById('docsSaveRow').style.display = mode === 'compile' ? 'none' : '';
+  document.getElementById('docsTitle').style.display   = mode === 'compile' ? 'none' : '';
   docStatus('');
 }
 
@@ -513,6 +544,8 @@ document.getElementById('docsLaunch').addEventListener('click', () => {
   docsKeyEl.value = localStorage.getItem(GEMINI_KEY) || '';
   renderKeyState();
   renderDocsList();
+  renderRollups();
+  defaultCompileRange();
 });
 document.getElementById('docsClose').addEventListener('click', () => docsModal.classList.remove('show'));
 docsModal.addEventListener('click', e => { if (e.target === docsModal) docsModal.classList.remove('show'); });
@@ -593,3 +626,284 @@ docsRunBtn.addEventListener('click', async () => {
 docsAskBtn.addEventListener('click', askAboutRecording);
 docsSaveBtn.addEventListener('click', saveDocEntry);
 
+document.getElementById('docsModeCompile').addEventListener('click', () => setDocsMode('compile'));
+document.getElementById('docsCompile').addEventListener('click', compileRange);
+document.getElementById('docsSaveReview').addEventListener('click', saveReview);
+
+// Default the range to the month so far — the common case is "what have I done
+// this month", and any wider range is two clicks away.
+function defaultCompileRange() {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const fromEl = document.getElementById('docsFrom');
+  const toEl   = document.getElementById('docsTo');
+  if (!fromEl.value) fromEl.value = isoDate(first);
+  if (!toEl.value)   toEl.value   = isoDate(now);
+}
+
+// ─── Monthly rollup and range compile ─────────────────────────────────────────
+// Two months of daily Docs is unreadable one file at a time. Google Docs tabs
+// would be the obvious answer, but the Docs API cannot create them — there is no
+// CreateTabRequest, they can only be made by hand in the UI. So navigation comes
+// from headings instead: each day is an <h1> in a per-month document, which Docs
+// turns into a clickable outline sidebar on its own. Transcripts stay out of it,
+// both to keep it readable and because a Doc caps at 1.02 million characters —
+// a month of half-hour transcripts alone would be over half of that.
+
+const ROLLUP_IDS_KEY = 'tm_doc_rollups';   // { '2026-08': fileId }
+let rollupIds = {};
+try { rollupIds = JSON.parse(localStorage.getItem(ROLLUP_IDS_KEY) || '{}'); } catch (_) { rollupIds = {}; }
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+                     'July', 'August', 'September', 'October', 'November', 'December'];
+
+function isoDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+
+// Entries saved before this feature have no explicit date; fall back to when
+// they were created so old logs still land in the right month.
+function entryDate(e) { return e.date || isoDate(new Date(e.createdAt || e.id)); }
+
+function monthLabel(key) {
+  const parts = key.split('-');
+  return MONTH_NAMES[Number(parts[1]) - 1] + ' ' + parts[0];
+}
+function rollupName(key) { return key + ' ' + monthLabel(key) + ' — Work Log'; }
+
+function dayHeading(iso) {
+  const p = iso.split('-').map(Number);
+  return pad(p[2]) + '-' + pad(p[1]) + '-' + String(p[0]).slice(-2) +
+         '_' + DAY_NAMES[new Date(p[0], p[1] - 1, p[2]).getDay()];
+}
+
+// Push note headings down a level so the rollup nests cleanly: day is h1, the
+// entry title h2, and the note's own "## Key notes" becomes h3 rather than
+// competing with the entry title in the outline.
+function demoteHeadings(html) {
+  return html.replace(/<(\/?)h([1-5])>/g, function (_, slash, n) {
+    return '<' + slash + 'h' + (Number(n) + 1) + '>';
+  });
+}
+
+// Built from the app's own index rather than appended to, so rebuilding is
+// idempotent and self-healing. The daily Docs stay the editable source of truth;
+// this one is generated, and says so at the top.
+function rollupHtml(key, entries) {
+  const byDay = new Map();
+  for (const e of entries) {
+    const d = entryDate(e);
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(e);
+  }
+  const days = Array.from(byDay.keys()).sort();
+
+  let h = '<h1>' + esc(monthLabel(key)) + ' — Work Log</h1>\n' +
+          '<p><i>Generated from the daily entries in ' + esc(DOCS_ROOT) + ', and rebuilt every ' +
+          'time one is saved — edits made here are overwritten, so edit the daily document ' +
+          'instead. ' + days.length + ' day' + (days.length === 1 ? '' : 's') + ' recorded.</i></p>\n<hr>\n';
+
+  for (const day of days) {
+    h += '<h1>' + esc(dayHeading(day)) + '</h1>\n';
+    for (const e of byDay.get(day)) {
+      h += '<h2>' + esc(e.title) + '</h2>\n' +
+           '<p><i><a href="' + esc(e.url) + '">Open the full entry</a></i></p>\n' +
+           (e.notes ? demoteHeadings(mdToHtml(e.notes))
+                    : '<p><i>No notes were stored for this entry.</i></p>') + '\n';
+    }
+    h += '<hr>\n';
+  }
+  return '<html><body>' + h + '</body></html>';
+}
+
+// Replace an existing Doc's contents. Drive re-converts the HTML and keeps the
+// same file id, so the rollup's link stays stable across rebuilds.
+async function replaceDocHtml(id, html) {
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + id +
+                        '?uploadType=media&fields=id,webViewLink', {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'text/html; charset=UTF-8' },
+    body: html,
+  });
+  if (r.status === 401) {
+    gcalConnected = false; accessToken = null;
+    updateGcalUI(); attemptSilentReconnect();
+    throw new Error('expired');
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data.error && data.error.message) || ('Drive HTTP ' + r.status));
+  return data;
+}
+
+async function findDocByName(name, parentId) {
+  const q = "mimeType='application/vnd.google-apps.document' and trashed=false" +
+            " and name='" + name.replace(/'/g, "\\'") + "'" +
+            " and '" + parentId + "' in parents";
+  const res = await drive('GET',
+    'https://www.googleapis.com/drive/v3/files?fields=files(id,webViewLink)&q=' + encodeURIComponent(q));
+  return (res && res.files && res.files[0]) || null;
+}
+
+// Rebuild the rollup for one month. Safe to call repeatedly.
+async function rebuildRollup(key) {
+  const entries = docs.filter(e => entryDate(e).slice(0, 7) === key)
+                      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  if (!entries.length) return null;
+
+  const rootId = await ensureFolder(DOCS_ROOT, 'root');
+  const name = rollupName(key);
+  const html = rollupHtml(key, entries);
+
+  // A remembered id can be stale — deleted, or from another device. Fall back to
+  // looking it up by name before giving up and making a second one.
+  let id = rollupIds[key] || null;
+  if (id) {
+    try {
+      const meta = await drive('GET',
+        'https://www.googleapis.com/drive/v3/files/' + id + '?fields=id,trashed');
+      if (!meta || meta.trashed) id = null;
+    } catch (e) {
+      if (e.message === 'expired') throw e;
+      id = null;
+    }
+  }
+  if (!id) {
+    const found = await findDocByName(name, rootId);
+    if (found) id = found.id;
+  }
+
+  let url;
+  if (id) {
+    const up = await replaceDocHtml(id, html);
+    url = up.webViewLink || ('https://docs.google.com/document/d/' + id + '/edit');
+  } else {
+    const made = await createDoc(name, html, rootId);
+    id = made.id;
+    url = made.webViewLink || ('https://docs.google.com/document/d/' + id + '/edit');
+  }
+
+  rollupIds[key] = id;
+  localStorage.setItem(ROLLUP_IDS_KEY, JSON.stringify(rollupIds));
+  renderRollups();
+  return url;
+}
+
+function renderRollups() {
+  const wrap = document.getElementById('docsRollups');
+  if (!wrap) return;
+  const keys = Object.keys(rollupIds).sort().reverse();
+  if (!keys.length) { wrap.innerHTML = '<div class="empty-msg">None yet.</div>'; return; }
+  wrap.innerHTML = keys.map(k =>
+    '<div class="docs-entry">' +
+      '<a href="https://docs.google.com/document/d/' + esc(rollupIds[k]) + '/edit" ' +
+        'target="_blank" rel="noopener">' + esc(monthLabel(k)) + ' — Work Log</a>' +
+      '<span>' + esc(k) + '</span>' +
+    '</div>').join('');
+}
+
+// ─── Compile a range ──────────────────────────────────────────────────────────
+
+function entriesInRange(from, to) {
+  return docs.filter(e => { const d = entryDate(e); return d >= from && d <= to; })
+             .sort((a, b) => entryDate(a).localeCompare(entryDate(b)) ||
+                             (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+// A plain record of what happened, not a pitch. The rules below are ordered by
+// how much damage breaking them does: inventing a result is worse than dull
+// prose, and a quiet week reported as quiet is the correct answer.
+function compilePrompt(entries, from, to) {
+  const logs = entries.map(e =>
+    '### ' + entryDate(e) + ' — ' + e.title + '\n' + (e.notes || '(no notes stored)')
+  ).join('\n\n');
+
+  return 'Below are my daily work logs from ' + from + ' to ' + to + '. Consolidate them ' +
+    'into one review of that period. Use Markdown.\n\n' +
+    'This is a factual record, not a pitch. In order of importance:\n' +
+    '- Use only what the logs say. Never add an achievement, result, metric or ' +
+    'conclusion that is not written in them.\n' +
+    '- Do not inflate. Avoid "led", "drove", "spearheaded", "significantly", ' +
+    '"successfully" and similar colouring unless that word appears in the log itself. ' +
+    'Plain, neutral wording throughout.\n' +
+    '- Carry numbers, names, dates and technical specifics through exactly as written. ' +
+    'Do not round or approximate them.\n' +
+    '- Where the logs are thin, or a stretch was quiet, say so plainly. Do not pad it out ' +
+    'to look busier. A short honest section is the correct output.\n' +
+    '- If two days contradict each other, say the logs differ rather than picking one.\n' +
+    '- Do not editorialise about how the period went overall.\n\n' +
+    'Structure:\n\n' +
+    '## Period covered\nThe dates, and how many days have entries.\n\n' +
+    '## What I worked on\nGrouped by project or theme rather than day by day. Every point ' +
+    'must be traceable to a log entry.\n\n' +
+    '## Tasks and ownership\nCarry through owners and deadlines as recorded, and mark which ' +
+    'are still open.\n\n' +
+    '## Data specifications recorded\nConsolidated across the period, exact names and numbers ' +
+    'verbatim, duplicates merged.\n\n' +
+    '## Decisions and approvals recorded\n\n' +
+    '## Still open\nQuestions, blockers and dependencies the logs leave unresolved.\n\n' +
+    'Keep every heading. Where the logs have nothing for one, write "Nothing recorded." ' +
+    'underneath it.\n\n' +
+    'LOGS:\n' + logs;
+}
+
+async function compileRange() {
+  if (docsBusy) return;
+  const from = document.getElementById('docsFrom').value;
+  const to   = document.getElementById('docsTo').value;
+  if (!from || !to) return docStatus('Pick both dates first.', 'err');
+  if (from > to)    return docStatus('The From date is after the To date.', 'err');
+
+  const entries = entriesInRange(from, to);
+  if (!entries.length) return docStatus('No saved entries in that range.', 'err');
+
+  docsBusy = true; setDocsEnabled(false);
+  try {
+    const days = new Set(entries.map(entryDate)).size;
+    docStatus('Reading ' + entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies') +
+              ' across ' + days + ' day' + (days === 1 ? '' : 's') + '…');
+    document.getElementById('docsReview').value =
+      await gemini([{ text: compilePrompt(entries, from, to) }]);
+    docStatus('Compiled — read it over, then save.', 'on');
+  } catch (e) {
+    docStatus(e.message, 'err');
+  } finally {
+    docsBusy = false; setDocsEnabled(true);
+  }
+}
+
+async function saveReview() {
+  if (docsBusy) return;
+  if (!driveReady()) return;
+
+  const text = document.getElementById('docsReview').value.trim();
+  if (!text) return docStatus('Nothing to save — compile a range first.', 'err');
+
+  const from = document.getElementById('docsFrom').value;
+  const to   = document.getElementById('docsTo').value;
+
+  docsBusy = true; setDocsEnabled(false);
+  try {
+    docStatus('Creating the review document…');
+    const rootId = await ensureFolder(DOCS_ROOT, 'root');
+    const name = 'Work review ' + from + ' to ' + to;
+    const html = '<html><body><h1>' + esc(name) + '</h1>\n' +
+                 '<p><i>Compiled ' + esc(new Date().toLocaleString()) +
+                 ' from the daily entries in ' + esc(DOCS_ROOT) + '.</i></p>\n' +
+                 mdToHtml(text) + '</body></html>';
+
+    const made = await createDoc(name, html, rootId);
+    const url = made.webViewLink || ('https://docs.google.com/document/d/' + made.id + '/edit');
+
+    docs.unshift({
+      id: Date.now(), title: name, folder: DOCS_ROOT, date: isoDate(new Date()),
+      createdAt: Date.now(), docId: made.id, url: url, notes: '', review: true,
+    });
+    saveDocsIndex();
+    renderDocsList();
+    docStatus('Review saved to ' + DOCS_ROOT, 'on');
+  } catch (e) {
+    docStatus(e.message === 'expired'
+      ? 'Google session expired — tap Re-sync at the top, then save again.'
+      : 'Could not save: ' + e.message, 'err');
+  } finally {
+    docsBusy = false; setDocsEnabled(true);
+  }
+}

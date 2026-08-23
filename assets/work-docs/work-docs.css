@@ -77,6 +77,10 @@
     .docs-keystate.ok { color: #1a7f37; }
     .docs-hint { font-size: 10.5px; color: #aaa; line-height: 1.45; margin-bottom: 12px; }
 
+    .docs-range { display: flex; gap: 8px; }
+    .docs-range > div { flex: 1; min-width: 0; }
+    .docs-rollups { margin-bottom: 10px; }
+
     .docs-recent { border-top: 1px solid #eee; padding-top: 10px; }
     .docs-entry {
       display: flex; align-items: baseline; gap: 8px;
