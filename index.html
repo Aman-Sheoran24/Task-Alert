@@ -1102,6 +1102,10 @@ async function findDailyEvents() {
                '&timeMin=' + encodeURIComponent(from.toISOString()) +
                '&timeMax=' + encodeURIComponent(to.toISOString());
 
+  // singleEvents=true expands a recurring series into one instance per day, so
+  // what comes back for an old RRULE:FREQ=DAILY event is today's instance, whose
+  // id is the master's plus a timestamp. recurringEventId points at the master —
+  // we keep it, because deleting the instance only skips a single day.
   const found = new Map();   // id -> event, de-duped across both passes
   const collect = (res) => {
     for (const ev of (res && res.items) || []) {
@@ -1154,19 +1158,34 @@ async function syncDailyEvent() {
     catch (e) { if (e.message === 'expired') throw e; }   // already gone is fine
   };
 
+  // The very first version of this app created the review event with
+  // RRULE:FREQ=DAILY — a series that never ends. Every device that connected back
+  // then made its own, and they still fire every morning. They have to be deleted
+  // at the MASTER (recurringEventId); deleting the instance we were handed only
+  // cancels today and the series returns tomorrow, which is exactly what kept
+  // happening. Nothing recurring is ever kept — today's event is always a plain
+  // one-off, so any series found here is a leftover by definition.
+  const series = new Set();
+  const singles = [];
+  for (const ev of existing) {
+    if (ev.recurringEventId) series.add(ev.recurringEventId);
+    else singles.push(ev);
+  }
+  for (const id of series) await drop(id);
+
   if (!q1.length) {
     // Nothing urgent+important right now — clear every review event, don't nag.
-    for (const ev of existing) await drop(ev.id);
+    for (const ev of singles) await drop(ev.id);
     localStorage.removeItem(DAILY_EVENT_KEY);
     return;
   }
 
-  // Keep the first, delete the rest. This is the self-heal: a calendar that
-  // already carries five copies collapses back to a single event on next sync.
-  for (const ev of existing.slice(1)) await drop(ev.id);
+  // Keep the first one-off, delete the rest. This is the self-heal: a calendar
+  // carrying several copies collapses back to a single event on the next sync.
+  for (const ev of singles.slice(1)) await drop(ev.id);
 
   const body = dailyEventBody(q1, today);
-  const keep = existing[0];
+  const keep = singles[0];
   if (keep) {
     try {
       await gcal('PUT', '/calendars/primary/events/' + keep.id, body);
