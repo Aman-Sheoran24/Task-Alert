@@ -21,9 +21,13 @@ const CAL_TIMEZONE = 'Asia/Kolkata';
 const DAILY_HOUR   = 11;   // 0-23
 const DAILY_MINUTE = 0;    // 0-59
 
-// Deadline reminders, in minutes before the deadline.
-// const REMIND_5H = 300;     // 5 hours
-// const REMIND_2H = 120;     // 2 hours
+// Popup alerts on a task's deadline event, in minutes before the deadline.
+// Empty = the deadline still appears in your calendar but never pops up.
+//   []          no alerts        (current)
+//   [0]         at the deadline
+//   [300, 120]  5 hours and 2 hours before
+// Edit this list — do not comment the line out, taskEventBody() reads it.
+const DEADLINE_REMINDERS = [];
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 
@@ -305,10 +309,7 @@ function taskEventBody(t) {
     end:   { dateTime: new Date(startMs + 30 * 60000).toISOString() },
     reminders: {
       useDefault: false,
-      overrides: [
-        { method: 'popup', minutes: REMIND_5H },
-        { method: 'popup', minutes: REMIND_2H },
-      ],
+      overrides: DEADLINE_REMINDERS.map(m => ({ method: 'popup', minutes: m })),
     },
   };
 }
