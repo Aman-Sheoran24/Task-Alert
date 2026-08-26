@@ -30,7 +30,7 @@ let docs = [];
 try { docs = JSON.parse(localStorage.getItem(DOCS_KEY) || '[]'); } catch (_) { docs = []; }
 
 let docsMode  = 'write';
-let audioFile = null;
+let audioFiles = [];        // several recordings become one day's log
 let docsBusy  = false;
 // Set while we bounce the user through the Drive consent screen, so the save
 // they already asked for resumes by itself once permission comes back.
@@ -66,7 +66,7 @@ function docProgress(frac) {
 
 function setDocsEnabled(on) {
   docsSaveBtn.disabled = !on;
-  docsRunBtn.disabled  = !on || !audioFile;
+  docsRunBtn.disabled  = !on || !audioFiles.length;
   docsAskBtn.disabled  = !on;
 }
 
@@ -417,10 +417,9 @@ function clearDocsForm() {
   docsNotesEl.value = '';
   docsTranscript.value = '';
   docsQuestionsEl.value = '';
-  audioFile = null;
+  audioFiles = [];
   docsAudioEl.value = '';
-  docsDrop.classList.remove('has');
-  docsDropText.textContent = 'Tap to choose a recording — or drop one here';
+  renderFileList();
   docProgress(null);
   setDocsEnabled(true);
 }
@@ -473,8 +472,13 @@ async function saveDocEntry() {
                '<p><i>' + esc(when.toLocaleString()) + '</i></p>\n' +
                mdToHtml(notes);
     if (transcript) {
+      // A "## filename" line marks the start of each recording when several were
+      // transcribed together; keep those as headings rather than paragraphs.
       html += '\n<hr>\n<h2>Full transcript</h2>\n' +
-              transcript.split(/\n{2,}/).map(p => '<p>' + esc(p) + '</p>').join('\n');
+              transcript.split(/\n{2,}/).map(function (p) {
+                const h = p.match(/^##\s+(.*)$/);
+                return h ? '<h3>' + esc(h[1]) + '</h3>' : '<p>' + esc(p) + '</p>';
+              }).join('\n');
     }
 
     docStatus('Creating the Google Doc…');
@@ -530,13 +534,65 @@ function setDocsMode(mode) {
   docStatus('');
 }
 
-function pickAudio(file) {
-  if (!file) return;
-  audioFile = file;
-  docsDrop.classList.add('has');
-  docsDropText.textContent = file.name + '  ·  ' + (file.size / 1048576).toFixed(1) + ' MB';
-  docsRunBtn.disabled = docsBusy;
+// Files are added to what is already selected rather than replacing it, so you
+// can pick a few, then drop in one more. Sorted by when each was recorded, not
+// the order they happened to be selected, so a day reads in sequence.
+function addAudioFiles(list) {
+  const incoming = Array.from(list || []).filter(f => f && f.size);
+  if (!incoming.length) return;
+
+  for (const f of incoming) {
+    const already = audioFiles.some(x => x.name === f.name && x.size === f.size &&
+                                         x.lastModified === f.lastModified);
+    if (!already) audioFiles.push(f);
+  }
+  audioFiles.sort((a, b) => (a.lastModified || 0) - (b.lastModified || 0));
+
+  renderFileList();
   docStatus('');
+}
+
+function removeAudioFile(i) {
+  audioFiles.splice(i, 1);
+  docsAudioEl.value = '';        // let the same file be re-picked after removal
+  renderFileList();
+}
+
+function renderFileList() {
+  const wrap = document.getElementById('docsFileList');
+  wrap.className = audioFiles.length ? 'docs-files' : '';
+  wrap.innerHTML = audioFiles.map((f, i) =>
+    '<div class="docs-file" id="docsFile' + i + '">' +
+      '<b>' + esc(f.name) + '</b>' +
+      '<i>' + (f.size / 1048576).toFixed(1) + ' MB</i>' +
+      '<button type="button" data-i="' + i + '" title="Remove">✕</button>' +
+    '</div>').join('');
+
+  const n = audioFiles.length;
+  docsDrop.classList.toggle('has', n > 0);
+  docsDropText.textContent = n
+    ? 'Add another recording — ' + n + ' selected'
+    : 'Tap to choose recordings — or drop them here';
+  docsRunBtn.disabled = docsBusy || !n;
+}
+
+// Transcribe each recording in turn and label the parts. They are kept separate
+// in the transcript so you can still tell which recording a passage came from,
+// while the log itself is written across all of them as one day.
+async function transcribeAll(files, onStep) {
+  const parts = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const label = files.length > 1 ? ' (recording ' + (i + 1) + ' of ' + files.length + ')' : '';
+    const text = await transcribe(f, (msg, frac) => {
+      onStep(msg.replace(/…$/, '') + label + '…',
+             files.length > 1 ? (i + (frac || 0)) / files.length : frac);
+    });
+    parts.push(files.length > 1 ? '## ' + f.name + '\n\n' + text : text);
+    const el = document.getElementById('docsFile' + i);
+    if (el) el.classList.add('done');
+  }
+  return parts.join('\n\n');
 }
 
 document.getElementById('docsLaunch').addEventListener('click', () => {
@@ -553,13 +609,19 @@ docsModal.addEventListener('click', e => { if (e.target === docsModal) docsModal
 document.getElementById('docsModeWrite').addEventListener('click', () => setDocsMode('write'));
 document.getElementById('docsModeVoice').addEventListener('click', () => setDocsMode('voice'));
 
-docsAudioEl.addEventListener('change', () => pickAudio(docsAudioEl.files[0]));
+docsAudioEl.addEventListener('change', () => addAudioFiles(docsAudioEl.files));
+
+// The list is rebuilt on every change, so the remove buttons are delegated.
+document.getElementById('docsFileList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-i]');
+  if (btn) removeAudioFile(Number(btn.dataset.i));
+});
 docsDrop.addEventListener('dragover', e => { e.preventDefault(); docsDrop.classList.add('over'); });
 docsDrop.addEventListener('dragleave', () => docsDrop.classList.remove('over'));
 docsDrop.addEventListener('drop', e => {
   e.preventDefault();
   docsDrop.classList.remove('over');
-  pickAudio(e.dataTransfer.files && e.dataTransfer.files[0]);
+  addAudioFiles(e.dataTransfer.files);
 });
 
 // The key saves itself as you type. It used to save only when a button was
@@ -601,17 +663,20 @@ document.getElementById('docsKeyClear').addEventListener('click', () => {
 });
 
 docsRunBtn.addEventListener('click', async () => {
-  if (docsBusy || !audioFile) return;
+  if (docsBusy || !audioFiles.length) return;
   docsBusy = true; setDocsEnabled(false);
   try {
-    const transcript = await transcribe(audioFile, (msg, frac) => { docStatus(msg); docProgress(frac); });
+    const files = audioFiles.slice();
+    const transcript = await transcribeAll(files, (msg, frac) => { docStatus(msg); docProgress(frac); });
     docsTranscript.value = transcript;
 
     docStatus('Writing the work log…'); docProgress(0.95);
     docsNotesEl.value = await draftNotes(transcript, docsQuestionsEl.value);
 
     if (!docsTitleEl.value.trim()) {
-      docsTitleEl.value = audioFile.name.replace(/\.[^.]+$/, '');
+      docsTitleEl.value = files.length > 1
+        ? files.length + ' recordings — ' + docsFolderName(new Date())
+        : files[0].name.replace(/\.[^.]+$/, '');
     }
     docProgress(1);
     docStatus('Done — read it over, edit anything, then save.', 'on');

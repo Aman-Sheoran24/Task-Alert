@@ -202,9 +202,10 @@
     <!-- Upload a recording and let Gemini do the first draft -->
     <div class="docs-pane" id="docsPaneVoice">
       <label class="docs-drop" id="docsDrop">
-        <input type="file" id="docsAudio" accept="audio/*">
-        <span id="docsDropText">Tap to choose a recording — or drop one here</span>
+        <input type="file" id="docsAudio" accept="audio/*" multiple>
+        <span id="docsDropText">Tap to choose recordings — or drop them here</span>
       </label>
+      <div id="docsFileList"></div>
 
       <label class="docs-label" for="docsQuestions">Anything specific to capture? (optional)</label>
       <textarea class="docs-input docs-ask" id="docsQuestions"

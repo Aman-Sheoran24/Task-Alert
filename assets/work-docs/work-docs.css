@@ -44,6 +44,22 @@
     .docs-drop.over { border-color: #6c5ce7; background: #efecff; }
     .docs-drop input { display: none; }
 
+    .docs-files { margin-bottom: 10px; }
+    .docs-file {
+      display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+      padding: 5px 8px; border: 1px solid #eceef1; border-radius: 7px;
+      margin-bottom: 4px; background: #fafbfc;
+    }
+    .docs-file b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; color: #444; }
+    .docs-file i { font-style: normal; color: #aaa; flex-shrink: 0; font-size: 10.5px; }
+    .docs-file button {
+      border: none; background: none; color: #bbb; cursor: pointer;
+      font-size: 13px; padding: 0 2px; flex-shrink: 0;
+    }
+    .docs-file button:hover { color: #e74c3c; }
+    .docs-file.done b { color: #1a7f37; }
+
     .docs-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .docs-row button {
       flex: 1; border: none; border-radius: 8px; padding: 10px;
