@@ -80,10 +80,15 @@ function docsFolderName(d) {
 
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 
+// A pasted key often arrives carrying a stray space, a newline, or a zero-width
+// character — pasting from a phone is especially prone to it. Real keys contain
+// only these characters, so anything else came from the paste, not from Google.
+function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9_-]/g, ''); }
+
 async function gemini(parts) {
   // Fall back to whatever is in the box, so a key that was just typed works
   // immediately rather than only after it has been written to storage.
-  const key = (localStorage.getItem(GEMINI_KEY) || docsKeyEl.value || '').trim();
+  const key = cleanKey(localStorage.getItem(GEMINI_KEY) || docsKeyEl.value);
   if (!key) throw new Error('Add your Gemini API key at the bottom of this panel first');
 
   const r = await fetch(
@@ -97,8 +102,26 @@ async function gemini(parts) {
 
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const msg = (data.error && data.error.message) || ('Gemini HTTP ' + r.status);
-    throw new Error(r.status === 400 && /API key/i.test(msg) ? 'That Gemini API key was rejected' : msg);
+    // Report what Google actually said. An earlier version collapsed every
+    // key-related 400 into one vague sentence, which hid the reason entirely —
+    // a truncated paste, a website-restricted key and a project with the API
+    // switched off all looked identical and none of them were actionable.
+    const msg = (data.error && data.error.message) || ('HTTP ' + r.status);
+    const origin = (typeof location !== 'undefined' && location.origin) || 'this site';
+    let hint = '';
+    if (r.status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) {
+      hint = ' — check the whole key was pasted, from aistudio.google.com/apikey';
+    } else if (r.status === 403 && /referer|referrer|blocked|API_KEY_HTTP_REFERRER/i.test(msg)) {
+      hint = ' — this key is restricted to certain websites. In Google Cloud Console → ' +
+             'Credentials, open the key and either remove the restriction or add ' + origin;
+    } else if (r.status === 403 && /SERVICE_DISABLED|has not been used|is disabled/i.test(msg)) {
+      hint = ' — enable the Generative Language API on this key\'s project, then wait a minute';
+    } else if (r.status === 404) {
+      hint = ' — the model ' + GEMINI_MODEL + ' is not available to this key';
+    } else if (r.status === 429) {
+      hint = ' — rate limit or quota reached; wait a little and retry';
+    }
+    throw new Error('Gemini: ' + msg + hint);
   }
 
   const cand = data.candidates && data.candidates[0];
@@ -361,9 +384,15 @@ async function ensureFolder(name, parentId) {
 }
 
 // Work Documentation / dd-mm-yy_Day, both created on demand.
+// One folder per month rather than per day: a folder per day meant twenty new
+// folders a month to click through. The day is still on every document's name.
+function monthFolderName(d) {
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + ' ' + MONTH_NAMES[d.getMonth()];
+}
+
 async function ensureDocsFolder(when) {
   const root = await ensureFolder(DOCS_ROOT, 'root');
-  return ensureFolder(docsFolderName(when), root);
+  return ensureFolder(monthFolderName(when), root);
 }
 
 // Upload HTML and ask Drive to convert it — that conversion is what makes the
@@ -407,7 +436,7 @@ function renderDocsList() {
   wrap.innerHTML = docs.map(d =>
     '<div class="docs-entry">' +
       '<a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.title) + '</a>' +
-      '<span>' + esc(d.folder) + '</span>' +
+      '<span>' + esc(entryDate(d)) + '</span>' +
     '</div>').join('');
 }
 
@@ -463,7 +492,7 @@ async function saveDocEntry() {
   docsBusy = true; setDocsEnabled(false);
   try {
     const when = new Date();
-    const folder = docsFolderName(when);
+    const folder = monthFolderName(when);
 
     docStatus('Finding the folder in Drive…');
     const folderId = await ensureDocsFolder(when);
@@ -482,7 +511,9 @@ async function saveDocEntry() {
     }
 
     docStatus('Creating the Google Doc…');
-    const made = await createDoc(title + ' — ' + folder,
+    // The day stays in the document's own name, so a month folder still reads
+    // chronologically at a glance.
+    const made = await createDoc(title + ' — ' + docsFolderName(when),
                                  '<html><body>' + html + '</body></html>', folderId);
 
     // The notes are kept alongside the link so the monthly rollup and the range
@@ -627,8 +658,25 @@ docsDrop.addEventListener('drop', e => {
 // The key saves itself as you type. It used to save only when a button was
 // pressed, which is how you could end up retyping it on every visit — typing it
 // and going straight to Transcribe left nothing stored.
+// Check the key on its own. Before this, the only way to discover a bad key was
+// to sit through an upload and a transcription first.
+async function testGeminiKey() {
+  if (docsBusy) return;
+  docsBusy = true; setDocsEnabled(false);
+  try {
+    docStatus('Testing the key…');
+    const out = await gemini([{ text: 'Reply with the single word OK.' }]);
+    docStatus('Key works — ' + GEMINI_MODEL + ' replied "' + out.slice(0, 24) + '"', 'on');
+  } catch (e) {
+    docStatus(e.message, 'err');
+  } finally {
+    docsBusy = false; setDocsEnabled(true);
+  }
+}
+
 function persistGeminiKey() {
-  const v = docsKeyEl.value.trim();
+  const v = cleanKey(docsKeyEl.value);
+  if (v !== docsKeyEl.value.trim()) docsKeyEl.value = v;   // show what we actually stored
   if (v) localStorage.setItem(GEMINI_KEY, v);
   else   localStorage.removeItem(GEMINI_KEY);
   renderKeyState();
@@ -650,6 +698,8 @@ docsKeyEl.addEventListener('input', () => {
   keySaveTimer = setTimeout(persistGeminiKey, 400);
 });
 docsKeyEl.addEventListener('blur', persistGeminiKey);
+
+document.getElementById('docsKeyTest').addEventListener('click', testGeminiKey);
 
 document.getElementById('docsKeyShow').addEventListener('click', () => {
   docsKeyEl.type = docsKeyEl.type === 'password' ? 'text' : 'password';
@@ -732,7 +782,10 @@ function monthLabel(key) {
   const parts = key.split('-');
   return MONTH_NAMES[Number(parts[1]) - 1] + ' ' + parts[0];
 }
-function rollupName(key) { return key + ' ' + monthLabel(key) + ' — Work Log'; }
+// The key already carries the year, so the label here is just the month name.
+function rollupName(key) {
+  return key + ' ' + MONTH_NAMES[Number(key.split('-')[1]) - 1] + ' — Work Log';
+}
 
 function dayHeading(iso) {
   const p = iso.split('-').map(Number);
@@ -813,7 +866,10 @@ async function rebuildRollup(key) {
                       .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   if (!entries.length) return null;
 
-  const rootId = await ensureFolder(DOCS_ROOT, 'root');
+  // Sits inside its own month's folder, alongside that month's entries, so the
+  // whole month is one folder holding one Work Log plus the documents it links to.
+  const root = await ensureFolder(DOCS_ROOT, 'root');
+  const rootId = await ensureFolder(rollupName(key).split(' — ')[0], root);
   const name = rollupName(key);
   const html = rollupHtml(key, entries);
 
