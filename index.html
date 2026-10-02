@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="assets/matrix/matrix.css">
   <link rel="stylesheet" href="assets/work-docs/work-docs.css">
   <link rel="stylesheet" href="assets/reading/reading.css">
+  <link rel="stylesheet" href="assets/wardrobe/wardrobe.css">
 </head>
 <body>
 
@@ -87,6 +88,9 @@
 
 <!-- Work Documentation launcher -->
 <button class="docs-launch" id="docsLaunch">📄 Work Documentation</button>
+
+<!-- Wardrobe launcher -->
+<button class="w-launch" id="wLaunch">👗 Wardrobe</button>
 
 <!-- Fast-reading launcher -->
 <button class="read-launch" id="readLaunch">📖 Fast Reading practice</button>
@@ -283,6 +287,160 @@
 </div>
 
 
+<div class="modal" id="wModal">
+  <div class="modal-box w-box">
+    <h3>👗 Wardrobe <button class="read-close" id="wClose">&times;</button></h3>
+
+    <div class="w-tabs">
+      <button id="wTab-items" class="on">Items</button>
+      <button id="wTab-insights">Insights</button>
+      <button id="wTab-plan">Plan</button>
+    </div>
+
+    <div class="w-status" id="wStatus"></div>
+
+    <!-- Items -->
+    <div class="w-pane on" id="wPane-items">
+      <div class="w-bar">
+        <button id="wAdd">＋ Add item</button>
+        <span class="w-meta grow"><b id="wItemCount">0</b> items</span>
+        <button class="ghost" id="wExport" title="Download a JSON backup">Export</button>
+        <label class="ghost" style="padding:9px 12px;border-radius:8px;font-size:13px;cursor:pointer">
+          Import<input type="file" id="wImport" accept="application/json,.json" style="display:none">
+        </label>
+      </div>
+
+      <div class="w-form" id="wForm">
+        <h4 id="wFormTitle">New item</h4>
+        <div class="w-grid">
+          <div><label class="w-label">Name</label>
+               <input class="w-input" type="text" name="name" placeholder="Navy linen shirt"></div>
+          <div><label class="w-label">Category</label>
+               <select class="w-input" name="category">
+                 <option>top</option><option>bottom</option><option>dress</option>
+                 <option>outerwear</option><option>footwear</option><option>accessory</option>
+                 <option>jewellery</option><option>bag</option><option>activewear</option>
+                 <option>traditional</option>
+               </select></div>
+          <div><label class="w-label">Colour</label>
+               <input class="w-input" type="text" name="colour" placeholder="navy"></div>
+          <div><label class="w-label">Brand</label>
+               <input class="w-input" type="text" name="brand"></div>
+          <div><label class="w-label">Material</label>
+               <input class="w-input" type="text" name="material" placeholder="linen"></div>
+          <div><label class="w-label">Formality</label>
+               <select class="w-input" name="formality">
+                 <option>loungewear</option><option selected>casual</option>
+                 <option>smart-casual</option><option>business</option><option>formal</option>
+               </select></div>
+          <div><label class="w-label">Status</label>
+               <select class="w-input" name="status">
+                 <option>available</option><option>laundry</option><option>lent</option>
+                 <option>repair</option><option>stored</option>
+               </select></div>
+          <div><label class="w-label">Price (INR)</label>
+               <input class="w-input" type="number" name="price" min="0" step="1"></div>
+          <div><label class="w-label">Bought on</label>
+               <input class="w-input" type="date" name="purchaseDate"></div>
+          <div><label class="w-label">Notes</label>
+               <input class="w-input" type="text" name="notes"></div>
+        </div>
+
+        <label class="w-label">Seasons</label>
+        <div class="w-seasons">
+          <label><input type="checkbox" name="season" value="summer">summer</label>
+          <label><input type="checkbox" name="season" value="monsoon">monsoon</label>
+          <label><input type="checkbox" name="season" value="winter">winter</label>
+          <label><input type="checkbox" name="season" value="all-season" checked>all-season</label>
+        </div>
+
+        <div class="w-form-btns">
+          <button class="w-save" id="wItemSave">Save</button>
+          <button class="w-cancel" id="wItemCancel">Cancel</button>
+          <button class="w-del" id="wItemDelete">Delete</button>
+        </div>
+      </div>
+
+      <div id="wItemList"></div>
+    </div>
+
+    <!-- Insights -->
+    <div class="w-pane" id="wPane-insights">
+      <div class="w-tiles" id="wStatTiles"></div>
+
+      <div class="w-section">
+        <label class="w-label">Best value — lowest cost per wear</label>
+        <div id="wBestValue"></div>
+      </div>
+      <div class="w-section">
+        <label class="w-label">Worst value — highest cost per wear</label>
+        <div id="wWorstValue"></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Gaps and excesses</label>
+        <select class="w-input" id="wGapSeason" style="margin-bottom:8px">
+          <option value="">All seasons</option>
+          <option value="summer">summer</option>
+          <option value="monsoon">monsoon</option>
+          <option value="winter">winter</option>
+        </select>
+        <div id="wGaps"></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Near-duplicate purchases</label>
+        <div id="wDupes"></div>
+      </div>
+    </div>
+
+    <!-- Plan -->
+    <div class="w-pane" id="wPane-plan">
+      <div class="w-section">
+        <label class="w-label">Outfit combinations</label>
+        <div class="w-grid">
+          <div><select class="w-input" id="wComboFormality">
+                 <option value="">Any formality</option>
+                 <option value="loungewear">loungewear</option>
+                 <option value="casual">casual</option>
+                 <option value="smart-casual">smart-casual</option>
+                 <option value="business">business</option>
+                 <option value="formal">formal</option>
+               </select></div>
+          <div><select class="w-input" id="wComboSeason">
+                 <option value="">Any season</option>
+                 <option value="summer">summer</option>
+                 <option value="monsoon">monsoon</option>
+                 <option value="winter">winter</option>
+               </select></div>
+        </div>
+        <div id="wCombos"></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Packing list</label>
+        <div class="w-grid">
+          <div><label class="w-label">Days</label>
+               <input class="w-input" type="number" id="wPackDays" value="3" min="1" max="60"></div>
+          <div><label class="w-label">Temperature °C</label>
+               <input class="w-input" type="number" id="wPackTemp" placeholder="optional"></div>
+        </div>
+        <div class="w-seasons">
+          <label><input type="checkbox" id="wPackRain">expecting rain</label>
+        </div>
+        <div id="wPacking"></div>
+      </div>
+    </div>
+
+    <div class="w-note">
+      Photos, garment cutout and product rendering stay in the local WardRobe app —
+      those need Python on your machine. This panel covers everything that can be
+      reasoned about from the garment facts. Use <b>Import</b> with that app's
+      <code>/api/export</code> JSON to bring your items and wear history across.
+    </div>
+  </div>
+</div>
+
 <!-- One directory per feature, loaded as plain classic scripts so they share a
      single global scope — that is what keeps the inline onclick handlers in the
      markup above resolving. Order matters: core defines the config, auth, Drive
@@ -292,6 +450,7 @@
 <script src="assets/matrix/matrix.js"></script>
 <script src="assets/reading/reading.js"></script>
 <script src="assets/work-docs/work-docs.js"></script>
+<script src="assets/wardrobe/wardrobe.js"></script>
 <script src="assets/core/boot.js"></script>
 
 <!-- Google Identity Services. initGis() runs once this loads. -->
