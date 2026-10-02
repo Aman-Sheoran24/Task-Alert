@@ -81,9 +81,13 @@ function docsFolderName(d) {
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 
 // A pasted key often arrives carrying a stray space, a newline, or a zero-width
-// character — pasting from a phone is especially prone to it. Real keys contain
-// only these characters, so anything else came from the paste, not from Google.
-function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9_-]/g, ''); }
+// character — pasting from a phone is especially prone to it. Strip those, but
+// keep every character a key can legitimately contain.
+//
+// The dot matters: AI Studio now issues keys prefixed "AQ." alongside the older
+// "AIza" ones, so dropping it silently corrupts the key — and because the field
+// is a password box, the damage is invisible.
+function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9._-]/g, ''); }
 
 async function gemini(parts) {
   // Fall back to whatever is in the box, so a key that was just typed works
