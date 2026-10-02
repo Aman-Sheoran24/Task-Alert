@@ -10,5 +10,8 @@ node_modules/
 
 # Vercel
 .vercel/
-WardRobe.zip
-WardRobe/
+# The imported archive and its extracted folder — 31 MB of personal photos.
+# Anchored to the repo root with a leading slash: an unanchored "WardRobe/"
+# also swallowed assets/wardrobe/, because git is case-insensitive here.
+/WardRobe.zip
+/WardRobe/
