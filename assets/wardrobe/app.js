@@ -115,7 +115,7 @@ function thumb(it, big) {
     // render as a broken-image icon. Fall back to the colour swatch instead.
     const fallback = swatchMarkup(it, big, 'photo unavailable')
       .replace(/"/g, '&quot;');
-    return `<img loading="lazy" src="/${it.photo_path}"
+    return `<img loading="lazy" src="${it.photo_path}"
       alt="" onerror="this.outerHTML='${fallback.replace(/'/g, "\\'").replace(/\n\s*/g, ' ')}'">`;
   }
   return swatchMarkup(it, big, 'no photo attached');
@@ -1527,7 +1527,7 @@ async function loadPhotos() {
     `${meta.photos.total} photo(s) indexed from ${meta.roots.length} folder(s).`;
   $('#photo-grid').innerHTML = photos.length ? photos.map((p) => `
     <div class="card">
-      <img loading="lazy" src="/${p.path}" alt="">
+      <img loading="lazy" src="${p.path}" alt="">
       <div class="meta">${esc(p.taken_on || 'no date')}${p.had_gps ? ' · GPS discarded' : ''}</div>
       <div class="meta" style="word-break:break-all">${esc(p.path.split(/[\\/]/).pop())}</div>
       <div class="row">
