@@ -174,7 +174,7 @@ const WStore = (function () {
     if (!d) return;
     await new Promise((resolve) => {
       const tx = d.transaction('photos', 'readwrite');
-      tx.objectStore('photos').put(dataUrl, String(itemId));
+      tx.objectStore('photos').put(dataUrl, String(key));
       tx.oncomplete = resolve; tx.onerror = resolve;
     });
   }
@@ -185,7 +185,7 @@ const WStore = (function () {
     if (!d) return;
     await new Promise((resolve) => {
       const tx = d.transaction('photos', 'readwrite');
-      tx.objectStore('photos').delete(String(itemId));
+      tx.objectStore('photos').delete(String(key));
       tx.oncomplete = resolve; tx.onerror = resolve;
     });
   }
