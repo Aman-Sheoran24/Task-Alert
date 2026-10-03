@@ -358,7 +358,32 @@
               'backdrop works best — or crop by hand, or use Gemini.' });
       }
 
-      if (path.indexOf('/api/photo/') === 0 || path === '/api/product/preview') {
+      if (path === '/api/product/preview') {
+        const url = String((body && body.url) || '').trim();
+        if (!url) return json({ error: 'Paste a product link first.' }, 400);
+        if (!/^https?:\/\//i.test(url)) {
+          return json({ error: 'That does not look like a link. Paste the full ' +
+                        'product URL, starting with https://' }, 400);
+        }
+        if (!geminiKey()) {
+          // Worth being specific: this is not the rembg limitation, it is that
+          // a page cannot fetch another site, and the key is the way around it.
+          return json({ error: 'Reading a product page needs a Gemini key. A web ' +
+            'page cannot fetch another site — retailers do not permit it — so ' +
+            'Gemini fetches and reads the page instead. Add a key under AI ' +
+            'settings, or fill the form in by hand.' }, 400);
+        }
+        try {
+          return json(await WVision.fetchProduct(url, geminiKey(), GEMINI_MODEL, {
+            categories: WStore.CATEGORIES, formalities: WStore.FORMALITIES,
+            seasons: WStore.SEASONS,
+          }));
+        } catch (e) {
+          return json({ error: e.message }, 400);
+        }
+      }
+
+      if (path.indexOf('/api/photo/') === 0) {
         return json({ error: NEEDS_LOCAL }, 501);
       }
     }

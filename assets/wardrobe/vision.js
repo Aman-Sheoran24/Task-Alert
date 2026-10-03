@@ -585,7 +585,111 @@ const WVision = (function () {
     return out;
   }
 
-  return { detectGarments, localCutout, loadImage, toCanvas,
+  // ── reading a retailer product page ──────────────────────────────────────
+  // The original fetched the page itself and parsed its schema.org JSON-LD. A
+  // browser cannot fetch another site at all — no retailer sends the CORS
+  // header that would permit it — so the fetch happens on Google's side
+  // instead, through Gemini's url_context tool, and the model reads the same
+  // structured data off the page.
+  const PRODUCT_PROMPT = [
+    'Read this product page and report what it says about the garment:',
+    '%URL%',
+    '',
+    "Prefer the page's own structured product data (schema.org JSON-LD) over the",
+    'marketing copy. Return JSON only — no prose, no code fence:',
+    '{"name":"","brand":"","price":0,"currency":"INR","image_url":"","notes":"",',
+    ' "category":"","subcategory":"","colour":"","pattern":"","material":"",',
+    ' "size":"","formality":"","seasons":""}',
+    '',
+    'Rules:',
+    '- category must be one of: %CATS%',
+    '- formality must be one of: %FORMS%',
+    '- seasons must be one or more of: %SEASONS%, comma separated.',
+    '- colour is a single plain word.',
+    '- price is a number, no currency symbol and no separators. Use the current',
+    '  selling price, not a struck-through one.',
+    '- image_url is the main product image, as an absolute URL.',
+    '- notes is the product description, trimmed to 400 characters.',
+    '- Leave a field as "" where the page does not say. Never invent a value.',
+  ].join('\n');
+
+  async function fetchProduct(url, apiKey, model, vocab) {
+    const prompt = PRODUCT_PROMPT
+      .replace('%URL%', url)
+      .replace('%CATS%', vocab.categories.join(', '))
+      .replace('%FORMS%', vocab.formalities.join(', '))
+      .replace('%SEASONS%', vocab.seasons.join(', '));
+
+    const res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          tools: [{ url_context: {} }],
+          generationConfig: { temperature: 0 },
+        }),
+      });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error((data.error && data.error.message) || ('Gemini HTTP ' + res.status));
+    }
+
+    const cand = (data.candidates || [])[0] || {};
+
+    // Say plainly when the page could not be reached, rather than reporting
+    // whatever the model produced without having read it.
+    const meta = cand.urlContextMetadata || cand.url_context_metadata || {};
+    const urls = meta.urlMetadata || meta.url_metadata || [];
+    const failed = urls.filter((u) => {
+      const st = u.urlRetrievalStatus || u.url_retrieval_status || '';
+      return st && st.indexOf('SUCCESS') === -1;
+    });
+    if (urls.length && failed.length === urls.length) {
+      throw new Error('That page could not be read. Retailers sometimes block ' +
+        'automated readers, and some pages need a login. Try the plain product ' +
+        'URL with no tracking parameters after the "?", or fill the form in by hand.');
+    }
+
+    const raw = ((cand.content || {}).parts || []).map((p) => p.text || '').join('')
+      .replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+
+    let d;
+    try { d = JSON.parse(raw); }
+    catch (e) { throw new Error('Could not make sense of that page.'); }
+    if (!d || typeof d !== 'object') throw new Error('Could not make sense of that page.');
+
+    const str = (v, n) => String(v === undefined || v === null ? '' : v).trim().slice(0, n || 80);
+    // Match the number rather than stripping characters: the dot in "Rs. 1,299"
+    // survives a naive filter and turns the value into ".1299".
+    const pm = String(d.price === undefined || d.price === null ? '' : d.price)
+      .match(/\d[\d,]*(?:\.\d+)?/);
+    const price = pm ? Number(pm[0].replace(/,/g, '')) : NaN;
+    const img = String(d.image_url || '');
+
+    return {
+      source_url: url,
+      name: str(d.name, 120),
+      brand: str(d.brand, 60),
+      notes: str(d.notes, 400),
+      image_url: /^https?:\/\//i.test(img) ? img : '',
+      price: (isFinite(price) && price > 0) ? price : undefined,
+      currency: str(d.currency, 8) || 'INR',
+      category: vocab.categories.indexOf(d.category) !== -1 ? d.category : '',
+      subcategory: str(d.subcategory, 40),
+      colour: str(d.colour, 30).toLowerCase(),
+      pattern: str(d.pattern, 40),
+      material: str(d.material, 40),
+      size: str(d.size, 20),
+      formality: vocab.formalities.indexOf(d.formality) !== -1 ? d.formality : '',
+      seasons: str(d.seasons, 60) || 'all-season',
+      _notes: ['Gemini fetched and read the page for you — a browser cannot load ' +
+               'another site directly. Check the details before adding.'],
+    };
+  }
+
+  return { detectGarments, localCutout, fetchProduct, loadImage, toCanvas,
            kmeans, colours, patternOf, textureEnergy, guessMaterial,
            guessSubcategory, guessFormality, sleeveLength, collarOpen,
            buildMask, closeMask, largestBlob, bbox, cleanBox, cleanMask, buildAttrs };
