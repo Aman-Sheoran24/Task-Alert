@@ -757,8 +757,8 @@ async function preparePhoto(img, rawDataUrl) {
     ? 'Local engine ready (<code>' + esc(META.local_cutout.engine) + '</code>) — '
       + 'garment extraction runs on this PC and costs nothing. '
       + (hasAI ? 'Gemini is only used if you ask for it.' : '')
-    : 'Local engine not installed, so extraction would use API credit. '
-      + '<code>python -m pip install "rembg[cpu]&gt;=2.0.75"</code> enables the free path.';
+    : ((META.local_cutout && META.local_cutout.hint) ||
+       'Automatic garment extraction is not available here.');
   $('#up-actions').hidden = false;
   $('#up-msg').innerHTML = hasLocal
     ? 'Photo saved. <strong>Extract garments</strong> runs on this PC for free and handles '
