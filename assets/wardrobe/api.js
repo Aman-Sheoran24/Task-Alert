@@ -163,9 +163,30 @@
       if (path === '/api/photos/unreviewed') return json([]);
       if (path === '/api/export') return json(WStore.exportAll());
       if (path === '/api/export.csv') return text(WStore.exportCsv(), 200, 'text/csv');
+      // Generating the image needs the local app; writing the prompt for it
+      // does not, and pasting that into AI Studio by hand is the free route.
       if (path === '/api/render/prompt') {
-        // The prompt is built from a colour measured off the photo, which needs PIL.
-        return json({ error: NEEDS_LOCAL }, 501);
+        let image = '', description = q.get('description') || '';
+        const itemId = q.get('item_id');
+        if (itemId) {
+          const it = WStore.getItem(itemId);
+          if (!it) return json({ error: 'No such item.' }, 404);
+          if (!it.photo_path) return json({ error: 'That item has no photo.' }, 400);
+          image = it.photo_path;
+          description = description ||
+            [it.name, it.colour, it.material, it.pattern].filter(Boolean).join(', ');
+        } else {
+          const src = q.get('source_path') || '';
+          image = WStore.resolvePhoto(src) || src;
+          if (!image) return json({ error: 'No image to work from.' }, 400);
+        }
+        let hex = null;
+        try {
+          const rgb = await WVision.dominantColour(image);
+          if (rgb) hex = WVision.hexOf(rgb);
+        } catch (_) { /* the prompt is still useful without it */ }
+        return json({ prompt: WVision.buildPrompt(description, hex),
+                      colour_hex: hex, image_url: image });
       }
     }
 
@@ -372,9 +393,25 @@
         // Scrape first. It reads the structured data the retailer publishes,
         // which is exact and needs no key; the model is the fallback for pages
         // that render their content with JavaScript or block the proxies.
+        // Bring the product photo across too, so the saved item has a picture
+        // rather than a colour swatch. Best effort: a draft without one is
+        // still worth confirming.
+        const withPhoto = async (d) => {
+          if (d && d.image_url) {
+            const dataUrl = await WProduct.fetchImage(d.image_url);
+            if (dataUrl) {
+              const key = 'p' + Date.now() + Math.random().toString(36).slice(2, 7);
+              await WStore.putPhoto(key, dataUrl);
+              d.photo_path = 'idb:' + key;
+              d._notes = (d._notes || []).concat('Saved the product photo with it.');
+            }
+          }
+          return d;
+        };
+
         let scrapeError = '';
         try {
-          return json(await WProduct.scrapeProduct(url, vocab, colourWords));
+          return json(await withPhoto(await WProduct.scrapeProduct(url, vocab, colourWords)));
         } catch (e) {
           scrapeError = e.message;
         }
@@ -385,7 +422,8 @@
             'lets it read the page instead — or fill the form in by hand.' }, 400);
         }
         try {
-          const d = await WVision.fetchProduct(url, geminiKey(), GEMINI_MODEL, vocab);
+          const d = await withPhoto(
+            await WVision.fetchProduct(url, geminiKey(), GEMINI_MODEL, vocab));
           d._notes = [scrapeError + ' Read it with Gemini instead.'].concat(d._notes || []);
           return json(d);
         } catch (e) {

@@ -585,6 +585,81 @@ const WVision = (function () {
     return out;
   }
 
+  // ── the AI Studio prompt ─────────────────────────────────────────────────
+  // Image generation itself needs the local app, but the prompt does not — and
+  // pasting it into AI Studio by hand is the free route. Ported from
+  // lib/render.py so the wording, and the measured colour it carries, match.
+  const CARD_RGB = [237, 237, 237];
+
+  const GHOST_PROMPT = [
+    'Reproduce the garment in this photograph as a clean studio',
+    'product photograph, in the style of an online clothing catalogue.',
+    '',
+    'Show ONLY the garment. Remove the person entirely: no head, face, hair, hands,',
+    'skin, other clothing, background, or surroundings.',
+    '',
+    'Present it with a ghost-mannequin (invisible mannequin) effect: the garment must',
+    'keep a natural three-dimensional worn shape, with realistic volume and drape',
+    'through the shoulders, chest and sleeves, as though an invisible person were',
+    'wearing it. It must not look flat, crumpled, or laid on a table.',
+    '',
+    'Composition: straight-on front view, centred and symmetrical, the whole garment',
+    'visible with a small even margin, sleeves falling slightly away from the body.',
+    '',
+    'Background: a plain, seamless, very light neutral grey (around #EDEDED), with',
+    'soft even studio lighting and a subtle contact shadow.',
+    '',
+    'Fidelity is critical -- reproduce exactly, without inventing anything:',
+    '- the precise colour and shade of the fabric',
+    '- the fabric texture and weave',
+    '- the collar style, button placket and every button',
+    '- pockets, cuffs, hems and seams',
+    '- any contrast trim, piping, stripes or tipping, in the same places',
+    '- any logo, badge or embroidery, in the same position and at the same scale',
+    '',
+    'Do not add text, watermarks, tags, hangers, props, a visible mannequin, or any',
+    'styling that is not present in the source photograph.',
+  ].join('\n');
+
+  const hexOf = (rgb) => '#' + rgb.map(
+    (v) => ('0' + Math.round(v).toString(16)).slice(-2).toUpperCase()).join('');
+
+  // The garment's colour, ignoring transparency, the card background behind a
+  // cutout, and blown-out near-white — all of which would wash the average out.
+  async function dominantColour(dataUrl, tol) {
+    tol = tol === undefined ? 48 : tol;
+    const img = await loadImage(dataUrl);
+    const c = toCanvas(img, 200);
+    const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const [pr, pg, pb, pa] = [px[i], px[i + 1], px[i + 2], px[i + 3]];
+      if (pa < 200) continue;
+      if (Math.abs(pr - CARD_RGB[0]) + Math.abs(pg - CARD_RGB[1]) +
+          Math.abs(pb - CARD_RGB[2]) < tol) continue;
+      const mx = Math.max(pr, pg, pb), mn = Math.min(pr, pg, pb);
+      if (mx > 244 && mx - mn < 10) continue;
+      r += pr; g += pg; b += pb; n++;
+    }
+    if (!n) return null;
+    return [Math.floor(r / n), Math.floor(g / n), Math.floor(b / n)];
+  }
+
+  function buildPrompt(description, colourHex) {
+    let extra = '';
+    if (colourHex) {
+      extra += '\n\nThe fabric colour has been measured from this photograph: ' +
+        colourHex + '. The garment you draw must be exactly this colour. Do not ' +
+        "lighten, saturate or 'improve' it.";
+    }
+    if (description) {
+      extra += '\n\nThe garment is: ' + String(description).trim().slice(0, 300) +
+        '\nUse this only to understand what you are looking at. The photograph is ' +
+        'the authority on colour and detail.';
+    }
+    return GHOST_PROMPT + extra;
+  }
+
   // ── reading a retailer product page ──────────────────────────────────────
   // The original fetched the page itself and parsed its schema.org JSON-LD. A
   // browser cannot fetch another site at all — no retailer sends the CORS
@@ -689,7 +764,8 @@ const WVision = (function () {
     };
   }
 
-  return { detectGarments, localCutout, fetchProduct, loadImage, toCanvas,
+  return { detectGarments, localCutout, fetchProduct, buildPrompt, dominantColour,
+           hexOf, GHOST_PROMPT, loadImage, toCanvas,
            kmeans, colours, patternOf, textureEnergy, guessMaterial,
            guessSubcategory, guessFormality, sleeveLength, collarOpen,
            buildMask, closeMask, largestBlob, bbox, cleanBox, cleanMask, buildAttrs };

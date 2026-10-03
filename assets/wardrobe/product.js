@@ -184,8 +184,12 @@ const WProduct = (function () {
       const n = Number(pm[1].replace(/,/g, ''));
       if (isFinite(n) && n > 0) draft.price = n;
     }
-    const img = body.match(/https?:\/\/[^\s)"']+\.(?:jpg|jpeg|png|webp)/i);
-    if (img) draft.image_url = img[0];
+    // A reader returns images as ![alt](url). Take that first, since many CDN
+    // urls carry no file extension for a bare pattern to recognise.
+    const md = body.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/);
+    const ext = body.match(/https?:\/\/[^\s)"']+\.(?:jpg|jpeg|png|webp)/i);
+    if (md) draft.image_url = md[1];
+    else if (ext) draft.image_url = ext[0];
     draft.notes = body.slice(0, 400);
 
     const guessed = keywordFields(name + ' ' + body.slice(0, 1200), colourWords);
@@ -289,6 +293,29 @@ const WProduct = (function () {
     return draft;
   }
 
+  // The <img> in the preview can point straight at the retailer's CDN, but an
+  // item has to keep its own copy — the link would rot, and some CDNs refuse a
+  // request that does not come from their own page. Pull the bytes through the
+  // same proxies and hand back a data URL.
+  async function fetchImage(url) {
+    for (const build of PROXIES) {
+      try {
+        const res = await fetch(build(url));
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 500) continue;
+        if (blob.type && blob.type.indexOf('image') !== 0) continue;
+        return await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result));
+          fr.onerror = () => reject(new Error('unreadable'));
+          fr.readAsDataURL(blob);
+        });
+      } catch (_) { /* try the next one */ }
+    }
+    return '';
+  }
+
   // Two passes. First the plain proxies, whose markup carries the structured
   // data and gives the most accurate read. Only if none of them yields a
   // product do we spend a slower request on a reader that renders the page.
@@ -344,6 +371,6 @@ const WProduct = (function () {
     throw err;
   }
 
-  return { scrapeProduct, parseProduct, parseText, keywordFields, jsonLdProducts,
+  return { scrapeProduct, fetchImage, parseProduct, parseText, keywordFields, jsonLdProducts,
            embeddedProduct, microdata, PROXIES, READERS };
 })();

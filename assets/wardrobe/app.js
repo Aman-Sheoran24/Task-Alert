@@ -1236,7 +1236,8 @@ $('#prod-preview').addEventListener('click', (ev) => {
     if (el && value !== undefined && value !== null && value !== '') el.value = value;
   };
   ['name', 'brand', 'category', 'subcategory', 'colour', 'pattern', 'material',
-   'size', 'formality', 'seasons', 'price', 'currency', 'care'].forEach(
+   'size', 'formality', 'seasons', 'price', 'currency', 'care',
+   'photo_path'].forEach(
     (f) => setIf(f, d[f]));
   const notes = [d.notes, d.source_url ? 'Bought from: ' + d.source_url : '']
     .filter(Boolean).join('\n\n');
