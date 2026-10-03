@@ -39,8 +39,12 @@
   }
 
   // ── reading style rules out of text ───────────────────────────────────────
+  // Keeps the dot in an "AQ." key while stripping whitespace and the
+  // zero-width characters a paste can carry.
+  function cleanKey(k) { return String(k || '').replace(/[^A-Za-z0-9._-]/g, ''); }
+
   function geminiKey() {
-    try { return (localStorage.getItem('tm_gemini_key') || '').trim(); }
+    try { return cleanKey(localStorage.getItem('tm_gemini_key')); }
     catch (_) { return ''; }
   }
 
@@ -122,7 +126,8 @@
         return json({
           categories: WStore.CATEGORIES, statuses: WStore.STATUSES,
           formalities: WStore.FORMALITIES, seasons: WStore.SEASONS,
-          photos: WStore.photos.size, roots: [],
+          photos: { total: WStore.photos.size, reviewed: WStore.photos.size },
+          roots: [],
           db: 'this browser (synced to your Drive)',
           ai: aiState(), style: WStore.ruleStats(),
           local_cutout: { available: true, engine: 'canvas colour separation',
@@ -198,18 +203,57 @@
         return json({ error: 'Paste or choose an exported wardrobe JSON file. ' +
                       'Scanning a folder of photos needs the local app.' }, 501);
       }
+      // Bulk CREATE, not bulk update: this is how the upload screen commits the
+      // drafts it built from a photo. It reads r.created and r.failed back.
       if (path === '/api/items/batch') {
-        let n = 0;
-        for (const id of body.ids || []) {
-          try { WStore.updateItem(id, body.patch || {}); n++; } catch (_) {}
+        const rows = (body && body.items) || [];
+        if (!Array.isArray(rows) || !rows.length) {
+          return json({ error: 'Nothing to add.' }, 400);
         }
-        return json({ updated: n });
+        const created = [], failed = [];
+        for (const row of rows.slice(0, 40)) {
+          try { created.push(WStore.createItem(row)); }
+          catch (e) { failed.push({ name: (row && row.name) || '?', error: e.message }); }
+        }
+        return json({ created: created, failed: failed }, 201);
       }
-      if (path === '/api/settings' || path === '/api/settings/test' ||
-          path === '/api/settings/clear') {
-        return json(Object.assign({ ok: true,
-          note: 'The Gemini key is set in Task Matrix, under Work Documentation.' },
-          aiState()));
+      // Settings genuinely work here. The key is the same one Task Matrix
+      // keeps for Work Documentation, so setting it in either place is enough.
+      if (path === '/api/settings/test') {
+        const key = cleanKey((body && body.gemini_api_key) || geminiKey());
+        if (!key) return json({ ok: false, message: 'No key to test.', model: GEMINI_MODEL });
+        try {
+          const r = await realFetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/' +
+            GEMINI_MODEL + ':generateContent', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+              body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply OK.' }] }] }),
+            });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            return json({ ok: false, model: GEMINI_MODEL,
+              message: (d.error && d.error.message) || ('Gemini HTTP ' + r.status) });
+          }
+          return json({ ok: true, message: 'Key works.', model: GEMINI_MODEL });
+        } catch (e) {
+          return json({ ok: false, model: GEMINI_MODEL,
+                        message: 'Could not reach Gemini: ' + e.message });
+        }
+      }
+      if (path === '/api/settings') {
+        if (body && 'gemini_api_key' in body) {
+          const key = cleanKey(body.gemini_api_key);
+          try {
+            if (key) localStorage.setItem('tm_gemini_key', key);
+            else localStorage.removeItem('tm_gemini_key');
+          } catch (_) {}
+        }
+        return json(aiState());
+      }
+      if (path === '/api/settings/clear') {
+        try { localStorage.removeItem('tm_gemini_key'); } catch (_) {}
+        return json(aiState());
       }
       if (path === '/api/style/sources') {
         if (body && body.image_b64) {
@@ -246,7 +290,8 @@
       if (path === '/api/style/rule/toggle') {
         return json(WStore.setRuleActive(body.id, body.active));
       }
-      if (path === '/api/demo/remove') return json({ removed: 0 });
+      // Nothing is seeded here, so there is never sample data to remove.
+      if (path === '/api/demo/remove') return json({ items: 0, outfits: 0 });
       if (path === '/api/photos/reviewed') return json({ ok: true });
 
       // Photo upload works; only the processing downstream of it does not.
@@ -356,6 +401,56 @@
       return json({ error: e && e.message ? e.message : String(e) }, 500);
     }
   };
+
+  // The Data tab exports through <a href="/api/export" download>, which the
+  // browser navigates to rather than fetching — so the shim never sees it and
+  // the link 404s. Catch the click and hand over a file built here instead.
+  function download(name, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type: type }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href^="/api/export"]');
+    if (!a) return;
+    e.preventDefault();
+    const day = WStore.today();
+    if (a.getAttribute('href').indexOf('.csv') !== -1) {
+      download('wardrobe-' + day + '.csv', WStore.exportCsv(), 'text/csv');
+    } else {
+      download('wardrobe-' + day + '.json',
+               JSON.stringify(WStore.exportAll(), null, 2), 'application/json');
+    }
+  });
+
+  // The Data tab's import control. The original scanned a folder on disk;
+  // in a browser the file has to be handed over, so this reads it and posts it
+  // through the same endpoint.
+  document.addEventListener('change', async (e) => {
+    if (!e.target || e.target.id !== 'data-import') return;
+    const file = e.target.files && e.target.files[0];
+    const msg = document.getElementById('data-import-msg');
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const text = await file.text();
+      const res = await window.fetch('/api/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text,
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Import failed.');
+      if (msg) {
+        msg.textContent = 'Imported ' + out.items + ' item(s) and ' +
+                          out.wears + ' wear record(s). Reloading…';
+      }
+      setTimeout(() => location.reload(), 900);
+    } catch (err) {
+      if (msg) msg.textContent = 'Could not import: ' + err.message;
+    }
+  });
 
   // Photos must be in memory before the first render, or items would paint
   // without them and only appear after some later refresh.

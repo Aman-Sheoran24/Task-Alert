@@ -232,6 +232,16 @@
     <a class="btn" href="/api/export" download>Export everything (JSON)</a>
     <a class="btn" href="/api/export.csv" download>Export items (CSV)</a>
   </p>
+  <h3>Bring data in</h3>
+  <p class="muted">Load an export from this app, or from the local Python WardRobe
+  (its <code>/api/export</code>). Items, wear history, outfits and style rules come
+  across; photos stay where they are.</p>
+  <p>
+    <label class="btn" for="data-import">Import a wardrobe JSON</label>
+    <input type="file" id="data-import" accept="application/json,.json" hidden>
+    <span id="data-import-msg" class="muted"></span>
+  </p>
+
   <h3>Sample data</h3>
   <p class="muted">The app ships with a demo wardrobe so every screen has something
   in it. Remove it once your own clothes are in &mdash; your own items, photos and
