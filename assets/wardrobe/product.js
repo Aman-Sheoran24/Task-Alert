@@ -19,11 +19,20 @@
 
 const WProduct = (function () {
 
-  // Tried in order. Each takes the target URL and must return its raw body.
+  // Tried in order, each returning the target's raw body. These fetch the
+  // markup as served, which is what carries the structured data.
   const PROXIES = [
     (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
     (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
     (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  ];
+
+  // Last resort for a shop that renders its product with JavaScript: a reader
+  // that runs the page in a headless browser and returns the result as text.
+  // No key, and no custom headers — those would force a CORS preflight that
+  // the service need not answer.
+  const READERS = [
+    (u) => 'https://r.jina.ai/' + u,
   ];
 
   const CATEGORY_WORDS = [
@@ -103,6 +112,93 @@ const WProduct = (function () {
     return found;
   }
 
+  // Next.js and Nuxt sites — Myntra, Ajio and many others — ship the product as
+  // JSON in a bootstrap script rather than as JSON-LD. Walk it for the first
+  // object that looks like a product.
+  function embeddedProduct(html) {
+    const blocks = [];
+    const next = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (next) blocks.push(next[1]);
+    const state = html.match(/__(?:INITIAL_STATE|PRELOADED_STATE|NUXT)__\s*=\s*({[\s\S]*?})\s*[;<]/);
+    if (state) blocks.push(state[1]);
+
+    for (const raw of blocks) {
+      let root;
+      try { root = JSON.parse(raw); } catch (_) { continue; }
+      const queue = [root];
+      let seen = 0;
+      while (queue.length && seen < 4000) {
+        const node = queue.shift();
+        seen++;
+        if (!node || typeof node !== 'object') continue;
+        if (Array.isArray(node)) { queue.push.apply(queue, node.slice(0, 200)); continue; }
+
+        const name = node.name || node.productName || node.title;
+        const priceish = node.price || node.sellingPrice || node.finalPrice || node.mrp;
+        if (typeof name === 'string' && name.length > 3 && priceish !== undefined) {
+          return { name: name, price: priceish,
+                   brand: node.brand && (node.brand.name || node.brand) || '',
+                   description: node.description || '',
+                   image: node.image || node.imageUrl || '' };
+        }
+        for (const k of Object.keys(node)) queue.push(node[k]);
+      }
+    }
+    return null;
+  }
+
+  // schema.org microdata, the older markup some shops still use.
+  function microdata(html) {
+    const grab = (prop) => {
+      const re = new RegExp('itemprop=["\']' + prop +
+        '["\'][^>]*(?:content=["\']([^"\']*)["\']|>\\s*([^<]{1,200}))', 'i');
+      const m = html.match(re);
+      return m ? String(m[1] || m[2] || '').trim() : '';
+    };
+    const name = grab('name');
+    if (!name) return null;
+    return { name: name, price: grab('price'), brand: grab('brand'),
+             description: grab('description'), image: grab('image') };
+  }
+
+  // What a reader proxy returns is prose, not markup: no JSON-LD and no meta
+  // tags. The title is still the first real line, and the keyword inference
+  // works on text just as well as it did on a product title.
+  function parseText(text, finalUrl, vocab, colourWords) {
+    const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+    let name = '';
+    for (const l of lines) {
+      const cleaned = l.replace(/^#+\s*/, '').replace(/^Title:\s*/i, '').trim();
+      if (cleaned.length >= 6 && cleaned.length <= 140 && !/^https?:/i.test(cleaned)) {
+        name = cleaned; break;
+      }
+    }
+    if (!name) return null;
+
+    const draft = { source_url: finalUrl, name: name.slice(0, 120) };
+    const body = lines.join(' ').slice(0, 4000);
+
+    // A currency marker makes this far safer than matching any number on the page.
+    const pm = body.match(/(?:₹|Rs\.?|INR|\$|£|€)\s*([\d][\d,]*(?:\.\d{1,2})?)/i);
+    if (pm) {
+      const n = Number(pm[1].replace(/,/g, ''));
+      if (isFinite(n) && n > 0) draft.price = n;
+    }
+    const img = body.match(/https?:\/\/[^\s)"']+\.(?:jpg|jpeg|png|webp)/i);
+    if (img) draft.image_url = img[0];
+    draft.notes = body.slice(0, 400);
+
+    const guessed = keywordFields(name + ' ' + body.slice(0, 1200), colourWords);
+    for (const k of Object.keys(guessed)) if (!draft[k]) draft[k] = guessed[k];
+
+    if (vocab.categories.indexOf(draft.category) === -1) draft.category = draft.category || '';
+    if (vocab.formalities.indexOf(draft.formality) === -1) draft.formality = draft.formality || '';
+    if (!draft.seasons) draft.seasons = 'all-season';
+    if (!draft.currency) draft.currency = 'INR';
+    draft._notes = ['Read the rendered page as text.'];
+    return draft;
+  }
+
   function first(v) {
     if (Array.isArray(v)) return v.length ? first(v[0]) : '';
     if (v && typeof v === 'object') return v.name || v.url || '';
@@ -155,7 +251,20 @@ const WProduct = (function () {
       }
       notes.push('Read the structured product data the page publishes (schema.org JSON-LD).');
     } else {
-      notes.push('No structured product data on that page; read its metadata instead.');
+      // No JSON-LD: try the bootstrap JSON these sites ship instead, then the
+      // older microdata markup, before falling back to page metadata.
+      const emb = embeddedProduct(html) || microdata(html);
+      if (emb) {
+        draft.name = String(emb.name || '').slice(0, 120);
+        draft.brand = String(first(emb.brand) || '').slice(0, 60);
+        draft.notes = String(emb.description || '').slice(0, 400);
+        draft.image_url = String(first(emb.image) || '');
+        const pm = String(emb.price === undefined ? '' : emb.price).match(/\d[\d,]*(?:\.\d+)?/);
+        if (pm) draft.price = Number(pm[0].replace(/,/g, ''));
+        notes.push('Read the product data the page embeds for its own scripts.');
+      } else {
+        notes.push('No structured product data on that page; read its metadata instead.');
+      }
     }
 
     if (!draft.name) draft.name = meta(doc, 'og:title');
@@ -180,34 +289,61 @@ const WProduct = (function () {
     return draft;
   }
 
-  // Try each proxy until one returns something that looks like a page.
+  // Two passes. First the plain proxies, whose markup carries the structured
+  // data and gives the most accurate read. Only if none of them yields a
+  // product do we spend a slower request on a reader that renders the page.
   async function scrapeProduct(url, vocab, colourWords, onTry) {
     const tried = [];
-    for (const build of PROXIES) {
-      const via = build(url);
+    let lastText = '';
+
+    const attempt = async (via, asText) => {
       const host = via.replace(/^https?:\/\//, '').split('/')[0];
       if (onTry) onTry(host);
+      let body;
       try {
-        const res = await fetch(via, { headers: { Accept: 'text/html,*/*' } });
-        if (!res.ok) { tried.push(host + ' (HTTP ' + res.status + ')'); continue; }
-        const html = await res.text();
-        if (!html || html.length < 200) { tried.push(host + ' (empty)'); continue; }
-
-        const draft = parseProduct(html, url, vocab, colourWords);
-        // A page that loads its content with JavaScript gives a shell with no
-        // product in it. Without a name there is nothing worth confirming.
-        if (!draft.name) { tried.push(host + ' (no product data)'); continue; }
-        draft._notes.push('Fetched through ' + host + ', because a web page cannot ' +
-                          'load another site directly.');
-        return draft;
+        const res = await fetch(via);
+        if (!res.ok) { tried.push(host + ' (HTTP ' + res.status + ')'); return null; }
+        body = await res.text();
       } catch (e) {
-        tried.push(host + ' (' + (e && e.message ? e.message : 'failed') + ')');
+        tried.push(host + ' (' + (e && e.message ? e.message : 'blocked') + ')');
+        return null;
       }
+      if (!body || body.length < 200) { tried.push(host + ' (empty)'); return null; }
+
+      const draft = asText
+        ? parseText(body, url, vocab, colourWords)
+        : parseProduct(body, url, vocab, colourWords);
+
+      // A shop that renders client-side returns a shell with no product in it.
+      // Without a name there is nothing worth asking the user to confirm.
+      if (!draft || !draft.name) {
+        lastText = lastText || body;
+        tried.push(host + ' (no product data)');
+        return null;
+      }
+      draft._notes.push('Fetched through ' + host + ', because a web page cannot ' +
+                        'load another site directly.');
+      draft._body = body;
+      return draft;
+    };
+
+    for (const build of PROXIES) {
+      const got = await attempt(build(url), false);
+      if (got) return got;
     }
+    for (const build of READERS) {
+      const got = await attempt(build(url), true);
+      if (got) return got;
+    }
+
     const err = new Error('Could not read that page. Tried: ' + tried.join(', ') + '.');
     err.tried = tried;
+    // Whatever text we did retrieve is still worth handing to the model, which
+    // saves it fetching the page a second time.
+    err.body = lastText;
     throw err;
   }
 
-  return { scrapeProduct, parseProduct, keywordFields, jsonLdProducts, PROXIES };
+  return { scrapeProduct, parseProduct, parseText, keywordFields, jsonLdProducts,
+           embeddedProduct, microdata, PROXIES, READERS };
 })();
