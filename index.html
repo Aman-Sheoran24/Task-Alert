@@ -293,8 +293,9 @@
 
     <div class="w-tabs">
       <button id="wTab-items" class="on">Items</button>
-      <button id="wTab-insights">Insights</button>
       <button id="wTab-plan">Plan</button>
+      <button id="wTab-insights">Insights</button>
+      <button id="wTab-style">Style</button>
     </div>
 
     <div class="w-status" id="wStatus"></div>
@@ -304,11 +305,15 @@
       <div class="w-bar">
         <button id="wAdd">＋ Add item</button>
         <span class="w-meta grow"><b id="wItemCount">0</b> items</span>
-        <button class="ghost" id="wExport" title="Download a JSON backup">Export</button>
+        <button class="ghost" id="wExport" title="Download a JSON backup">JSON</button>
+        <button class="ghost" id="wExportCsv" title="Download a spreadsheet">CSV</button>
         <label class="ghost" style="padding:9px 12px;border-radius:8px;font-size:13px;cursor:pointer">
           Import<input type="file" id="wImport" accept="application/json,.json" style="display:none">
         </label>
       </div>
+
+      <input class="w-input" type="search" id="wSearch" style="margin-bottom:10px"
+             placeholder="Search name, brand, colour, notes…">
 
       <div class="w-form" id="wForm">
         <h4 id="wFormTitle">New item</h4>
@@ -328,6 +333,16 @@
                <input class="w-input" type="text" name="brand"></div>
           <div><label class="w-label">Material</label>
                <input class="w-input" type="text" name="material" placeholder="linen"></div>
+          <div><label class="w-label">Subcategory</label>
+               <input class="w-input" type="text" name="subcategory" placeholder="polo"></div>
+          <div><label class="w-label">Size</label>
+               <input class="w-input" type="text" name="size" placeholder="M"></div>
+          <div><label class="w-label">Pattern</label>
+               <input class="w-input" type="text" name="pattern" placeholder="solid"></div>
+          <div><label class="w-label">Care</label>
+               <input class="w-input" type="text" name="care" placeholder="machine wash cold"></div>
+          <div><label class="w-label">Status note</label>
+               <input class="w-input" type="text" name="statusNote" placeholder="lent to Rahul"></div>
           <div><label class="w-label">Formality</label>
                <select class="w-input" name="formality">
                  <option>loungewear</option><option selected>casual</option>
@@ -353,6 +368,12 @@
           <label><input type="checkbox" name="season" value="winter">winter</label>
           <label><input type="checkbox" name="season" value="all-season" checked>all-season</label>
         </div>
+
+        <div class="w-seasons">
+          <label><input type="checkbox" name="retired">retired (keep the record, drop it from counts)</label>
+        </div>
+
+        <div id="wHistory"></div>
 
         <div class="w-form-btns">
           <button class="w-save" id="wItemSave">Save</button>
@@ -397,6 +418,29 @@
     <!-- Plan -->
     <div class="w-pane" id="wPane-plan">
       <div class="w-section">
+        <label class="w-label">Pick one outfit for me</label>
+        <div class="w-grid">
+          <div><select class="w-input" id="wSugFormality">
+                 <option value="loungewear">loungewear</option>
+                 <option value="casual" selected>casual</option>
+                 <option value="smart-casual">smart-casual</option>
+                 <option value="business">business</option>
+                 <option value="formal">formal</option>
+               </select></div>
+          <div><input class="w-input" type="number" id="wSugTemp" placeholder="temp °C (optional)"></div>
+        </div>
+        <div class="w-seasons">
+          <label><input type="checkbox" id="wSugRain">expecting rain</label>
+        </div>
+        <div id="wSuggest"></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Saved outfits</label>
+        <div id="wOutfits"></div>
+      </div>
+
+      <div class="w-section">
         <label class="w-label">Outfit combinations</label>
         <div class="w-grid">
           <div><select class="w-input" id="wComboFormality">
@@ -429,6 +473,40 @@
           <label><input type="checkbox" id="wPackRain">expecting rain</label>
         </div>
         <div id="wPacking"></div>
+      </div>
+    </div>
+
+    <!-- Style -->
+    <div class="w-pane" id="wPane-style">
+      <div class="w-section">
+        <label class="w-label">Your style rules <span id="wRuleCount" class="w-meta"></span></label>
+        <div id="wRules"></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Add a pairing by hand</label>
+        <div class="w-grid">
+          <div><input class="w-input" type="text" id="wRuleA" placeholder="navy"></div>
+          <div><input class="w-input" type="text" id="wRuleB" placeholder="brown"></div>
+          <div><select class="w-input" id="wRuleVerdict">
+                 <option value="good">works well</option>
+                 <option value="avoid">avoid</option>
+               </select></div>
+          <div><input class="w-input" type="text" id="wRuleText" placeholder="why (optional)"></div>
+        </div>
+        <div class="w-bar"><button id="wRuleAdd" class="grow">Add rule</button></div>
+      </div>
+
+      <div class="w-section">
+        <label class="w-label">Learn rules from notes</label>
+        <textarea class="w-input" id="wRuleNotes" rows="4"
+                  placeholder="Paste style advice — a video transcript, an article, your own notes. Instagram and YouTube need a login, so paste the text or caption rather than a link."></textarea>
+        <div class="w-bar">
+          <button id="wRuleLearnAI" class="grow">Read with Gemini</button>
+          <button class="ghost" id="wRuleLearnOffline">Offline reader</button>
+        </div>
+        <div class="w-meta">Gemini reads the meaning; the offline reader just pattern-matches
+          colour pairs and needs no key. Either way the rules are yours to toggle or delete.</div>
       </div>
     </div>
 

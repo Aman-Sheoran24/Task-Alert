@@ -61,10 +61,14 @@ const W_OPTIONAL = new Set(['dress', 'traditional', 'jewellery', 'activewear']);
 const WARDROBE_KEY = 'tm_wardrobe';
 const WARDROBE_FILE = 'wardrobe.json';   // its own appData file, beside the task list
 
-let wardrobe = { items: [], wears: [] };
+let wardrobe = { items: [], wears: [], outfits: [], rules: [], sources: [] };
 try {
   const raw = JSON.parse(localStorage.getItem(WARDROBE_KEY) || 'null');
-  if (raw && Array.isArray(raw.items)) wardrobe = { items: raw.items, wears: raw.wears || [] };
+  if (raw && Array.isArray(raw.items)) {
+    wardrobe = { items: raw.items, wears: raw.wears || [],
+                 outfits: raw.outfits || [], rules: raw.rules || [],
+                 sources: raw.sources || [] };
+  }
 } catch (_) { /* a corrupt blob should not take the page down */ }
 
 let wTab = 'items';
@@ -383,6 +387,10 @@ function wBuildCombos(opts) {
   const outers  = avail.filter(i => i.category === 'outerwear');
   const extras  = avail.filter(i => ['accessory', 'jewellery', 'bag'].indexOf(i.category) !== -1);
 
+  // Saved style rules nudge the ranking. With none, this is a no-op and the
+  // colour engine decides on its own.
+  const pairRules = wPairRules();
+
   const pairs = [];
   for (const t of tops) for (const b of bottoms) pairs.push([t, b]);
   for (const d of dresses) pairs.push([d, null]);
@@ -428,6 +436,8 @@ function wBuildCombos(opts) {
       score += (h[1] - 60) / 8;
       reasons.push('Footwear: ' + h[2]);
     }
+
+    score += wRuleAdjust(chosen.map(x => x.colour), reasons, pairRules);
 
     const layer = wBestExtra(outers, colours, formalityOf);
     combos.push({
@@ -501,8 +511,11 @@ async function loadWardrobeFromDrive() {
   let remote = null;
   try { remote = JSON.parse(text); } catch (_) { return; }
   if (!remote || !Array.isArray(remote.items)) return;
-  wardrobe.items = wMerge(wardrobe.items, remote.items);
-  wardrobe.wears = wMerge(wardrobe.wears, remote.wears || []);
+  wardrobe.items   = wMerge(wardrobe.items, remote.items);
+  wardrobe.wears   = wMerge(wardrobe.wears, remote.wears || []);
+  wardrobe.outfits = wMerge(wardrobe.outfits || [], remote.outfits || []);
+  wardrobe.rules   = wMerge(wardrobe.rules || [], remote.rules || []);
+  wardrobe.sources = wMerge(wardrobe.sources || [], remote.sources || []);
   localStorage.setItem(WARDROBE_KEY, JSON.stringify(wardrobe));
   renderWardrobe();
 }
@@ -537,11 +550,15 @@ function importWardrobeExport(json) {
   const items = data.items.map(r => ({
     id: 'py-' + r.id,
     name: r.name || 'Untitled',
+    retired: !!r.retired,
+    statusNote: r.status_note || '',
     category: W_CATEGORIES.indexOf(r.category) >= 0 ? r.category : 'top',
     subcategory: r.subcategory || '',
     brand: r.brand || '',
     size: r.size || '',
     colour: r.colour || '',
+    pattern: r.pattern || '',
+    care: r.care || '',
     material: r.material || '',
     formality: W_FORMALITY.indexOf(r.formality) >= 0 ? r.formality : 'casual',
     seasons: String(r.seasons || 'all-season').split(',').filter(Boolean),
@@ -574,7 +591,253 @@ function exportWardrobe() {
     schema: 1,
     items: wardrobe.items,
     wears: wardrobe.wears,
+    outfits: wardrobe.outfits || [],
+    rules: wardrobe.rules || [],
+    sources: wardrobe.sources || [],
   }, null, 2);
+}
+
+// ─── Style rules ──────────────────────────────────────────────────────────────
+// Rules you have saved from your own style sources. They do not replace the
+// colour engine — they nudge its ranking, so the app still works with none.
+
+function wActiveRules() {
+  const liveSources = new Set((wardrobe.sources || [])
+    .filter(s => !s.deleted && s.active !== false).map(s => s.id));
+  return (wardrobe.rules || []).filter(r =>
+    !r.deleted && r.active !== false &&
+    // A rule under a disabled source does not count, or the UI claims influence
+    // that is not actually being applied.
+    (!r.sourceId || liveSources.has(r.sourceId)));
+}
+
+function wPairRules() {
+  return wActiveRules().map(r => ({
+    a: wNormalise(r.colourA), b: wNormalise(r.colourB), rule: r,
+  })).filter(p => p.a && p.b);
+}
+
+function wRuleAdjust(colours, reasons, pairRules) {
+  let delta = 0;
+  const toks = colours.filter(Boolean).map(wNormalise);
+  for (const p of pairRules) {
+    if (toks.indexOf(p.a) === -1 || toks.indexOf(p.b) === -1) continue;
+    const good = (p.rule.verdict || 'good') === 'good';
+    const weight = Number(p.rule.weight) || 1;
+    delta += (good ? 14 : -26) * weight;
+    reasons.push((good ? 'Your saved style note: ' : 'Your saved style note warns: ') +
+                 (p.rule.text || (p.a + ' with ' + p.b)));
+  }
+  return delta;
+}
+
+// Pattern-match colour pairs out of pasted text. Deliberately modest — it is
+// the fallback for when no Gemini key is set.
+const W_AVOID_RE = /\b(avoid|never|don'?t|do not|clash)\b/i;
+
+function wExtractRulesOffline(text) {
+  const names = Object.keys(W_HUES).concat([...W_NEUTRALS]).join('|');
+  const pairRe = new RegExp('\\b(' + names + ')\\b[^.;!?\\n]{0,40}?\\b(?:with|and|against|over|under|plus)\\b[^.;!?\\n]{0,20}?\\b(' + names + ')\\b', 'gi');
+  const rules = [], seen = new Set();
+
+  for (const sentence of String(text || '').split(/[.\n;!?]/)) {
+    const s = sentence.trim();
+    if (s.length < 8) continue;
+    const avoid = W_AVOID_RE.test(s);
+    let m;
+    pairRe.lastIndex = 0;
+    while ((m = pairRe.exec(s)) !== null) {
+      const a = wNormalise(m[1]), b = wNormalise(m[2]);
+      const key = a + '|' + b;
+      if (!a || !b || a === b || seen.has(key)) continue;
+      seen.add(key);
+      rules.push({ colourA: a, colourB: b, verdict: avoid ? 'avoid' : 'good',
+                   text: s.slice(0, 300), weight: 0.6, origin: 'heuristic' });
+      if (rules.length >= 20) break;
+    }
+    if (rules.length >= 20) break;
+  }
+  return rules;
+}
+
+// With a key, Gemini reads the text properly instead of pattern-matching it.
+async function wExtractRulesAI(text) {
+  const out = await gemini([{ text:
+    'Below are notes about clothing style. Extract the concrete colour-pairing ' +
+    'rules they state. Reply with JSON only — an array, no prose, no code fence:\n' +
+    '[{"colourA":"navy","colourB":"brown","verdict":"good","text":"<the sentence ' +
+    'that says so>","weight":0.9}]\n\n' +
+    'Rules: verdict is "good" or "avoid". weight is 0 to 1, how strongly the text ' +
+    'asserts it. Use single plain colour words. Only include a pair the text ' +
+    'actually comments on — do not infer from general colour theory, and return ' +
+    '[] if it states none.\n\nNOTES:\n' + text }]);
+
+  const cleaned = out.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(cleaned); } catch (e) {
+    throw new Error('Gemini did not return usable JSON. Try the offline reader.');
+  }
+  if (!Array.isArray(parsed)) throw new Error('Gemini did not return a list of rules.');
+
+  return parsed.map(r => ({
+    colourA: wNormalise(r.colourA), colourB: wNormalise(r.colourB),
+    verdict: r.verdict === 'avoid' ? 'avoid' : 'good',
+    text: String(r.text || '').slice(0, 300),
+    weight: Math.max(0, Math.min(Number(r.weight) || 1, 1)),
+    origin: 'ai',
+  })).filter(r => r.colourA && r.colourB && r.colourA !== r.colourB);
+}
+
+function wAddSource(title, rules, origin) {
+  const sid = 's' + Date.now();
+  wardrobe.sources = wardrobe.sources || [];
+  wardrobe.rules = wardrobe.rules || [];
+  wardrobe.sources.push({ id: sid, title: title || 'Pasted notes', origin: origin,
+                          active: true, addedAt: Date.now(), updatedAt: Date.now() });
+  for (const r of rules) {
+    wardrobe.rules.push(Object.assign({
+      id: 'r' + Date.now() + Math.random().toString(36).slice(2, 6),
+      sourceId: sid, active: true, updatedAt: Date.now(),
+    }, r));
+  }
+  wSave();
+  return rules.length;
+}
+
+// ─── Pick one outfit for me ───────────────────────────────────────────────────
+// Lower score is better. Formality match dominates everything else — a business
+// trouser must never win a casual slot just because it is under-worn. Within a
+// band we rotate: recently worn sinks, long-idle and never-worn rise. Wear count
+// is capped so a beloved item worn 200 times is only gently penalised.
+function wSuggest(tempC, rain, formality) {
+  const season = wSeasonForTemp(tempC);
+  const pool = wItems().filter(i => i.status === 'available' &&
+    ((i.seasons || []).indexOf(season) !== -1 || (i.seasons || []).indexOf('all-season') !== -1));
+
+  const want = Math.max(0, W_FORMALITY.indexOf(formality || 'casual'));
+  const score = (i) => {
+    const fi = W_FORMALITY.indexOf(i.formality);
+    let s = (fi >= 0 ? Math.abs(fi - want) : 2) * 1000;
+    if (i.daysSinceWorn === null) s -= 60;                 // never worn: pull in
+    else if (i.daysSinceWorn < 7) s += 400;                // just worn: don't repeat
+    else s -= Math.min(i.daysSinceWorn, 180) / 2;
+    return s + Math.min(i.wearCount, 60) / 2;
+  };
+  const pick = (cats, n) => pool.filter(i => cats.indexOf(i.category) !== -1)
+    .sort((a, b) => score(a) - score(b)).slice(0, n || 1);
+
+  const chosen = [], notes = [];
+  const dress = pick(['dress']), tops = pick(['top']), bottoms = pick(['bottom']);
+  if (dress.length && !(tops.length && bottoms.length)) chosen.push.apply(chosen, dress);
+  else chosen.push.apply(chosen, tops.concat(bottoms));
+  chosen.push.apply(chosen, pick(['footwear']));
+
+  const t = Number(tempC);
+  const hasTemp = tempC !== '' && tempC !== null && tempC !== undefined && isFinite(t);
+  if (hasTemp && t <= 18) {
+    chosen.push.apply(chosen, pick(['outerwear']));
+    notes.push(t + '°C — added a layer.');
+  }
+  if (rain) notes.push('Rain expected: avoid suede or canvas footwear and light colours.');
+  if (hasTemp && t >= 32) notes.push(t + '°C — favour cotton or linen and loose fits.');
+  chosen.push.apply(chosen, pick(['bag']));
+
+  if (!chosen.length) notes.push('Nothing available matched. Check laundry status, or add items.');
+  return { season: season, formality: formality || 'casual', items: chosen, notes: notes };
+}
+
+// ─── Saved outfits ────────────────────────────────────────────────────────────
+
+function wListOutfits() {
+  return (wardrobe.outfits || []).filter(o => !o.deleted).map(o => {
+    const items = (o.itemIds || [])
+      .map(id => wardrobe.items.find(x => x.id === id && !x.deleted))
+      .filter(Boolean).map(wDerive);
+    return Object.assign({}, o, {
+      items: items,
+      totalPrice: Math.round(items.reduce((s, i) => s + (i.price || 0), 0) * 100) / 100,
+      // Anything not available means you cannot actually wear this today.
+      blocked: items.filter(i => i.status !== 'available').map(i => i.name),
+    });
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function wCreateOutfit(name, itemIds, occasion) {
+  wardrobe.outfits = wardrobe.outfits || [];
+  wardrobe.outfits.push({
+    id: 'o' + Date.now(), name: name, itemIds: itemIds.slice(),
+    occasion: occasion || '', createdAt: Date.now(), updatedAt: Date.now(),
+  });
+  wSave();
+}
+
+function wDeleteOutfit(id) {
+  const o = (wardrobe.outfits || []).find(x => x.id === id);
+  if (!o) return;
+  o.deleted = true; o.updatedAt = Date.now();
+  wSave();
+}
+
+// Logging an outfit logs every piece in it, so cost per wear stays honest.
+function wWearOutfit(id, onDate) {
+  const o = (wardrobe.outfits || []).find(x => x.id === id);
+  if (!o) return 0;
+  let n = 0;
+  for (const itemId of o.itemIds || []) {
+    if (wLogWearOn(itemId, onDate || wToday(), 'outfit')) n++;
+  }
+  wSave();
+  return n;
+}
+
+// Log a wear on a specific date. Returns false if that date is already logged,
+// so logging an outfit twice does not double-count the pieces.
+function wLogWearOn(itemId, date, source) {
+  const dup = wardrobe.wears.some(w => w.itemId === itemId && w.wornOn === date && !w.deleted);
+  if (dup) return false;
+  wardrobe.wears.push({
+    id: 'ww' + Date.now() + Math.random().toString(36).slice(2, 6),
+    itemId: itemId, wornOn: date, source: source || 'manual', note: '',
+    updatedAt: Date.now(),
+  });
+  return true;
+}
+
+function wRemoveWear(wearId) {
+  const w = wardrobe.wears.find(x => x.id === wearId);
+  if (!w) return;
+  w.deleted = true; w.updatedAt = Date.now();
+  wSave();
+}
+
+function wWearHistory(itemId) {
+  return wardrobe.wears.filter(w => w.itemId === itemId && !w.deleted)
+    .sort((a, b) => b.wornOn.localeCompare(a.wornOn));
+}
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function wExportCsv() {
+  const cols = ['id', 'name', 'category', 'subcategory', 'brand', 'size', 'colour',
+                'material', 'formality', 'seasons', 'price', 'currency',
+                'purchaseDate', 'status', 'wearCount', 'lastWorn', 'costPerWear'];
+  const cell = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = Array.isArray(v) ? v.join('|') : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const rows = [cols.join(',')];
+  for (const i of wItems()) rows.push(cols.map(c => cell(i[c])).join(','));
+  return rows.join('\n');
+}
+
+function wDownload(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────────
@@ -594,7 +857,7 @@ function wMoney(n, currency) {
 
 function setWTab(tab) {
   wTab = tab;
-  for (const t of ['items', 'insights', 'plan']) {
+  for (const t of ['items', 'insights', 'plan', 'style']) {
     const on = t === tab;
     document.getElementById('wTab-' + t).classList.toggle('on', on);
     document.getElementById('wPane-' + t).classList.toggle('on', on);
@@ -606,8 +869,13 @@ function setWTab(tab) {
 
 function renderItems() {
   const wrap = document.getElementById('wItemList');
-  const items = wItems().sort((a, b) =>
-    a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const q = (document.getElementById('wSearch').value || '').trim().toLowerCase();
+  const items = wItems()
+    // Retired pieces keep their history but drop out of the working list.
+    .filter(i => !i.retired)
+    .filter(i => !q || [i.name, i.brand, i.colour, i.subcategory, i.notes]
+      .some(v => (v || '').toLowerCase().indexOf(q) !== -1))
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 
   document.getElementById('wItemCount').textContent = items.length;
   if (!items.length) {
@@ -655,6 +923,13 @@ function openItemForm(id) {
   f.querySelector('[name=price]').value     = i && i.price != null ? i.price : '';
   f.querySelector('[name=purchaseDate]').value = i ? (i.purchaseDate || '') : '';
   f.querySelector('[name=notes]').value     = i ? (i.notes || '') : '';
+  f.querySelector('[name=subcategory]').value = i ? (i.subcategory || '') : '';
+  f.querySelector('[name=size]').value      = i ? (i.size || '') : '';
+  f.querySelector('[name=pattern]').value   = i ? (i.pattern || '') : '';
+  f.querySelector('[name=care]').value      = i ? (i.care || '') : '';
+  f.querySelector('[name=statusNote]').value = i ? (i.statusNote || '') : '';
+  f.querySelector('[name=retired]').checked = i ? !!i.retired : false;
+  renderWearHistory(i ? i.id : null);
   for (const cb of f.querySelectorAll('[name=season]')) {
     cb.checked = i ? (i.seasons || []).indexOf(cb.value) !== -1 : cb.value === 'all-season';
   }
@@ -687,6 +962,12 @@ function saveItemForm() {
     currency: 'INR',
     purchaseDate: f.querySelector('[name=purchaseDate]').value,
     notes: f.querySelector('[name=notes]').value.trim(),
+    subcategory: f.querySelector('[name=subcategory]').value.trim(),
+    size: f.querySelector('[name=size]').value.trim(),
+    pattern: f.querySelector('[name=pattern]').value.trim(),
+    care: f.querySelector('[name=care]').value.trim(),
+    statusNote: f.querySelector('[name=statusNote]').value.trim(),
+    retired: f.querySelector('[name=retired]').checked,
     seasons: seasons.length ? seasons : ['all-season'],
     updatedAt: Date.now(),
   };
@@ -775,6 +1056,9 @@ function renderInsights() {
 // ─── Plan ─────────────────────────────────────────────────────────────────────
 
 function renderPlan() {
+  renderSuggest();
+  renderOutfits();
+
   const combos = wBuildCombos({
     formality: document.getElementById('wComboFormality').value || null,
     season: document.getElementById('wComboSeason').value || null,
@@ -814,7 +1098,140 @@ function renderPlan() {
 function renderWardrobe() {
   if (wTab === 'items') renderItems();
   else if (wTab === 'insights') renderInsights();
+  else if (wTab === 'style') renderRules();
   else renderPlan();
+}
+
+
+// ─── UI: suggest, outfits, style rules ────────────────────────────────────────
+
+function renderSuggest() {
+  const s = wSuggest(
+    document.getElementById('wSugTemp').value,
+    document.getElementById('wSugRain').checked,
+    document.getElementById('wSugFormality').value);
+
+  document.getElementById('wSuggest').innerHTML =
+    (s.items.length
+      ? '<div class="w-combo">' +
+          '<div class="w-combo-head"><b>' +
+            esc(s.items.map(i => i.name).join('  +  ')) + '</b></div>' +
+          '<span class="w-meta">' + esc(s.formality) + ' · ' + esc(s.season) + '</span>' +
+          s.notes.map(n => '<div class="w-why">' + esc(n) + '</div>').join('') +
+          '<div class="w-form-btns" style="margin-top:8px">' +
+            '<button class="w-save" id="wSugWear">Wear this today</button>' +
+            '<button class="w-cancel" id="wSugSave">Save as outfit</button>' +
+          '</div>' +
+        '</div>'
+      : '<div class="empty-msg">' +
+        esc(s.notes[0] || 'Nothing available matched.') + '</div>');
+
+  const wear = document.getElementById('wSugWear');
+  if (wear) {
+    wear.addEventListener('click', () => {
+      let n = 0;
+      for (const i of s.items) if (wLogWearOn(i.id, wToday(), 'suggest')) n++;
+      wSave();
+      wStatus('Logged ' + n + ' piece(s) as worn today.', 'on');
+      renderWardrobe();
+    });
+    document.getElementById('wSugSave').addEventListener('click', () => {
+      const name = prompt('Name this outfit:', s.items[0].name + ' combination');
+      if (!name) return;
+      wCreateOutfit(name.trim(), s.items.map(i => i.id), s.formality);
+      wStatus('Saved as an outfit.', 'on');
+      renderWardrobe();
+    });
+  }
+}
+
+function renderOutfits() {
+  const outfits = wListOutfits();
+  document.getElementById('wOutfits').innerHTML = outfits.length
+    ? outfits.map(o =>
+        '<div class="w-combo">' +
+          '<div class="w-combo-head">' +
+            '<b>' + esc(o.name) + '</b>' +
+            '<span class="w-score">' + esc(wMoney(o.totalPrice)) + '</span>' +
+          '</div>' +
+          '<span class="w-meta">' + esc(o.items.map(i => i.name).join(', ') || 'no items') +
+            (o.occasion ? ' · ' + esc(o.occasion) : '') + '</span>' +
+          (o.blocked.length
+            ? '<div class="w-finding gap">Not wearable right now: ' +
+              esc(o.blocked.join(', ')) + '</div>'
+            : '') +
+          '<div class="w-form-btns" style="margin-top:8px">' +
+            '<button class="w-save" data-owear="' + esc(o.id) + '">Wear today</button>' +
+            '<button class="w-del" data-odel="' + esc(o.id) + '">Delete</button>' +
+          '</div>' +
+        '</div>').join('')
+    : '<div class="empty-msg">No saved outfits yet. Build one from a suggestion ' +
+      'or a combination above.</div>';
+}
+
+function renderRules() {
+  const rules = (wardrobe.rules || []).filter(r => !r.deleted);
+  const active = wActiveRules().length;
+  document.getElementById('wRuleCount').textContent =
+    rules.length ? active + ' of ' + rules.length + ' in effect' : 'none yet';
+
+  document.getElementById('wRules').innerHTML = rules.length
+    ? rules.map(r =>
+        '<div class="w-row">' +
+          '<span>' +
+            '<b style="color:' + (r.verdict === 'avoid' ? '#c0392b' : '#1a7f37') + '">' +
+              esc(r.colourA) + ' + ' + esc(r.colourB) + '</b> ' +
+            esc(r.text || '') +
+          '</span>' +
+          '<b><label style="font-weight:400;font-size:10.5px">' +
+            '<input type="checkbox" data-rule="' + esc(r.id) + '"' +
+              (r.active !== false ? ' checked' : '') + '> on</label> ' +
+            '<button data-ruledel="' + esc(r.id) + '" style="border:none;background:none;' +
+              'cursor:pointer;color:#bbb">✕</button>' +
+          '</b>' +
+        '</div>').join('')
+    : '<div class="empty-msg">No style rules yet. Paste notes below, or add a pair by hand.</div>';
+}
+
+// ─── Wear history, inside the item form ───────────────────────────────────────
+
+function renderWearHistory(itemId) {
+  const wrap = document.getElementById('wHistory');
+  if (!itemId) { wrap.innerHTML = ''; return; }
+  const hist = wWearHistory(itemId);
+  wrap.innerHTML =
+    '<label class="w-label" style="margin-top:10px">Wear history (' + hist.length + ')</label>' +
+    '<div class="w-bar">' +
+      '<input class="w-input grow" type="date" id="wHistDate" value="' + esc(wToday()) + '">' +
+      '<button class="ghost" id="wHistAdd">Log that date</button>' +
+    '</div>' +
+    (hist.length
+      ? hist.slice(0, 12).map(w => '<div class="w-row"><span>' + esc(w.wornOn) +
+          (w.source && w.source !== 'manual' ? ' · ' + esc(w.source) : '') + '</span>' +
+          '<b><button data-weardel="' + esc(w.id) + '" style="border:none;background:none;' +
+          'cursor:pointer;color:#bbb">✕</button></b></div>').join('')
+      : '<div class="empty-msg">Never worn.</div>');
+
+  document.getElementById('wHistAdd').addEventListener('click', () => {
+    const d = document.getElementById('wHistDate').value;
+    if (!d) return;
+    if (wLogWearOn(itemId, d, 'manual')) {
+      wSave();
+      wStatus('Logged a wear on ' + d + '.', 'on');
+    } else {
+      wStatus('That date is already logged.', 'err');
+    }
+    renderWearHistory(itemId);
+    renderItems();
+  });
+
+  wrap.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-weardel]');
+    if (!b) return;
+    wRemoveWear(b.dataset.weardel);
+    renderWearHistory(itemId);
+    renderItems();
+  }, { once: true });
 }
 
 // ─── Wiring ───────────────────────────────────────────────────────────────────
@@ -831,7 +1248,7 @@ document.getElementById('wLaunch').addEventListener('click', () => {
 document.getElementById('wClose').addEventListener('click', () => wModal.classList.remove('show'));
 wModal.addEventListener('click', e => { if (e.target === wModal) wModal.classList.remove('show'); });
 
-for (const t of ['items', 'insights', 'plan']) {
+for (const t of ['items', 'insights', 'plan', 'style']) {
   document.getElementById('wTab-' + t).addEventListener('click', () => setWTab(t));
 }
 
@@ -871,6 +1288,93 @@ document.getElementById('wImport').addEventListener('change', (e) => {
   fr.onerror = () => wStatus('Could not read that file.', 'err');
   fr.readAsText(file);
   e.target.value = '';
+});
+
+document.getElementById('wSearch').addEventListener('input', renderItems);
+
+for (const id of ['wSugFormality', 'wSugTemp', 'wSugRain']) {
+  document.getElementById(id).addEventListener('change', renderSuggest);
+}
+
+// Outfit rows are rebuilt on every render, so their buttons are delegated.
+document.getElementById('wOutfits').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-owear],button[data-odel]');
+  if (!b) return;
+  if (b.dataset.owear) {
+    const n = wWearOutfit(b.dataset.owear);
+    wStatus(n ? 'Logged ' + n + ' piece(s) as worn today.' : 'Already logged today.',
+            n ? 'on' : 'err');
+  } else {
+    wDeleteOutfit(b.dataset.odel);
+    wStatus('Outfit deleted.', 'on');
+  }
+  renderWardrobe();
+});
+
+document.getElementById('wRules').addEventListener('click', (e) => {
+  const del = e.target.closest('button[data-ruledel]');
+  if (del) {
+    const r = (wardrobe.rules || []).find(x => x.id === del.dataset.ruledel);
+    if (r) { r.deleted = true; r.updatedAt = Date.now(); wSave(); }
+    renderRules();
+  }
+});
+document.getElementById('wRules').addEventListener('change', (e) => {
+  const cb = e.target.closest('input[data-rule]');
+  if (!cb) return;
+  const r = (wardrobe.rules || []).find(x => x.id === cb.dataset.rule);
+  if (r) { r.active = cb.checked; r.updatedAt = Date.now(); wSave(); }
+  renderRules();
+});
+
+document.getElementById('wRuleAdd').addEventListener('click', () => {
+  const a = wNormalise(document.getElementById('wRuleA').value);
+  const b = wNormalise(document.getElementById('wRuleB').value);
+  if (!a || !b) return wStatus('Enter two colours.', 'err');
+  if (a === b) return wStatus('Those are the same colour.', 'err');
+  wAddSource('Added by hand', [{
+    colourA: a, colourB: b,
+    verdict: document.getElementById('wRuleVerdict').value,
+    text: document.getElementById('wRuleText').value.trim(),
+    weight: 1, origin: 'manual',
+  }], 'manual');
+  document.getElementById('wRuleA').value = '';
+  document.getElementById('wRuleB').value = '';
+  document.getElementById('wRuleText').value = '';
+  wStatus('Rule added — it now affects the combination ranking.', 'on');
+  renderRules();
+});
+
+async function learnRules(useAI) {
+  if (wBusy) return;
+  const text = document.getElementById('wRuleNotes').value.trim();
+  if (!text) return wStatus('Paste some notes first.', 'err');
+
+  wBusy = true;
+  try {
+    wStatus(useAI ? 'Reading the notes with Gemini…' : 'Scanning for colour pairs…');
+    const rules = useAI ? await wExtractRulesAI(text) : wExtractRulesOffline(text);
+    if (!rules.length) {
+      wStatus('No colour pairings found in that text.', 'err');
+      return;
+    }
+    const title = text.split('\n')[0].slice(0, 80) || 'Pasted notes';
+    wAddSource(title, rules, useAI ? 'ai' : 'heuristic');
+    document.getElementById('wRuleNotes').value = '';
+    wStatus('Learned ' + rules.length + ' rule(s). They now affect the ranking.', 'on');
+    renderRules();
+  } catch (e) {
+    wStatus(e.message, 'err');
+  } finally {
+    wBusy = false;
+  }
+}
+document.getElementById('wRuleLearnAI').addEventListener('click', () => learnRules(true));
+document.getElementById('wRuleLearnOffline').addEventListener('click', () => learnRules(false));
+
+document.getElementById('wExportCsv').addEventListener('click', () => {
+  wDownload('wardrobe-' + wToday() + '.csv', wExportCsv(), 'text/csv');
+  wStatus('CSV exported.', 'on');
 });
 
 document.getElementById('wExport').addEventListener('click', () => {
