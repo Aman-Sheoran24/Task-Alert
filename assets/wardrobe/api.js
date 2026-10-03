@@ -413,7 +413,15 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  document.addEventListener('click', (e) => {
+  // Guarded: the page always has a document, but the module should not fall
+  // over at load time if it is ever evaluated without one.
+  const onDoc = (ev, fn) => {
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener(ev, fn);
+    }
+  };
+
+  onDoc('click', (e) => {
     const a = e.target.closest && e.target.closest('a[href^="/api/export"]');
     if (!a) return;
     e.preventDefault();
@@ -429,7 +437,7 @@
   // The Data tab's import control. The original scanned a folder on disk;
   // in a browser the file has to be handed over, so this reads it and posts it
   // through the same endpoint.
-  document.addEventListener('change', async (e) => {
+  onDoc('change', async (e) => {
     if (!e.target || e.target.id !== 'data-import') return;
     const file = e.target.files && e.target.files[0];
     const msg = document.getElementById('data-import-msg');
