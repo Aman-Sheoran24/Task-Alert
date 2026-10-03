@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My WardRobe</title>
+<link rel="stylesheet" href="assets/wardrobe/style.css">
+</head>
+<body>
+<a href="index.html" style="position:fixed;left:10px;bottom:10px;z-index:999;background:#222;color:#fff;text-decoration:none;padding:7px 12px;border-radius:8px;font:600 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;opacity:.85">← Task Matrix</a>
+
+<header>
+  <h1>My WardRobe</h1>
+  <p class="sub">Local-first digital closet &middot; <span id="privacy">nothing leaves this machine</span>
+    &middot; <span id="ai-badge" class="muted"></span></p>
+  <nav id="tabs">
+    <button data-tab="closet" class="on">Closet</button>
+    <button data-tab="add">Add item</button>
+    <button data-tab="outfits">Outfits</button>
+    <button data-tab="plan">Plan</button>
+    <button data-tab="style">Style sources</button>
+    <button data-tab="insights">Insights</button>
+    <button data-tab="photos">Photos</button>
+    <button data-tab="data">Data</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ========== CLOSET ========== -->
+<section id="tab-closet" class="tab on">
+  <div class="bar">
+    <input id="q" type="search" placeholder="Search name, brand, colour...">
+    <select id="f-category"><option value="">All categories</option></select>
+    <select id="f-status"><option value="">Any status</option></select>
+    <select id="f-formality"><option value="">Any formality</option></select>
+    <label class="chk"><input type="checkbox" id="f-retired"> show retired</label>
+    <span class="grow"></span>
+    <span id="closet-count" class="muted"></span>
+  </div>
+  <div class="bar" id="sel-bar" hidden>
+    <strong id="sel-count">0 selected</strong>
+    <button id="sel-delete">Delete selected…</button>
+    <button id="sel-clear" class="ghost">Clear selection</button>
+  </div>
+  <div id="grid" class="grid"></div>
+</section>
+
+<!-- ========== ADD ========== -->
+<section id="tab-add" class="tab">
+  <h2>Add an item</h2>
+
+  <div class="panel">
+    <h3 style="margin-top:0">Upload a photo &mdash; it splits into separate garments</h3>
+    <p class="muted">Upload a photo of yourself wearing an outfit and each garment is
+    detected, <strong>cut out of the photo individually</strong> and added as its own
+    wardrobe item &mdash; shirt, trousers, shoes and belt become four entries, not one
+    photo. Flat product shots work too. You review and edit everything before it saves.</p>
+    <div class="bar">
+      <input type="file" id="up-file" accept="image/*">
+      <span id="up-msg" class="muted"></span>
+    </div>
+    <div id="up-stage"></div>
+    <div id="up-actions" class="bar" hidden>
+      <button id="act-local">Extract garments &mdash; free, on this PC</button>
+      <button id="act-split" class="ghost">Use Gemini instead (costs API credit)</button>
+      <button id="act-crop" class="ghost">Crop by hand</button>
+      <button id="act-whole" class="ghost">Use whole photo</button>
+      <label class="chk" title="Sends each garment to Gemini once; costs API credit">
+        <input type="checkbox" id="up-render"> AI product images (uses credit)</label>
+    </div>
+    <p id="engine-note" class="muted"></p>
+    <div id="up-preview"></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">Bought it online? Paste the link</h3>
+    <p class="muted">Works with Myntra, Amazon, Flipkart, Ajio, H&amp;M, Zara and most
+    retailers &mdash; they publish structured product data we can read. Details are
+    filled in as a <strong>draft you confirm or edit</strong>; nothing is saved until you press Add.</p>
+    <div class="bar">
+      <input id="prod-url" placeholder="https://www.myntra.com/..." style="flex:1;min-width:18rem">
+      <label class="chk" title="Uses your Gemini key for better attribute extraction">
+        <input type="checkbox" id="prod-ai"> use AI</label>
+      <button id="prod-go">Fetch details</button>
+    </div>
+    <div id="prod-msg" class="muted"></div>
+    <div id="prod-preview"></div>
+  </div>
+
+  <p class="muted">Or enter it by hand. Anything counts &mdash; a flat-lay, a hanger shot,
+  a shelf, or a product screenshot. There is no &ldquo;must be a photo of you wearing it&rdquo; rule here.</p>
+  <form id="add-form" class="form">
+    <label>Name <span class="req">*</span><input name="name" required placeholder="Black Crew Tee"></label>
+    <label>Category <span class="req">*</span><select name="category" id="add-category" required></select></label>
+    <label>Subcategory<input name="subcategory" placeholder="t-shirt"></label>
+    <label>Brand<input name="brand" placeholder="Uniqlo"></label>
+    <label>Size<input name="size" placeholder="M"></label>
+    <label>Colour<input name="colour" placeholder="black"></label>
+    <label>Pattern<input name="pattern" placeholder="solid"></label>
+    <label>Material<input name="material" placeholder="cotton"></label>
+    <label>Care<input name="care" placeholder="machine wash cold"></label>
+    <label>Formality<select name="formality" id="add-formality"></select></label>
+    <label>Seasons<select name="seasons" id="add-seasons"></select></label>
+    <label>Price<input name="price" type="number" step="0.01" placeholder="990"></label>
+    <label>Currency<input name="currency" value="INR"></label>
+    <label>Purchase date<input name="purchase_date" type="date"></label>
+    <label>Status<select name="status" id="add-status"></select></label>
+    <label class="wide">Photo path <span class="muted">(optional, must be inside an imported folder)</span>
+      <input name="photo_path" placeholder="C:\Users\you\Pictures\shirt.jpg"></label>
+    <label class="wide">Notes<textarea name="notes" rows="2"></textarea></label>
+    <div class="wide actions"><button type="submit">Add to wardrobe</button>
+      <button type="button" class="ghost" id="add-reset">Clear form</button>
+      <span id="add-msg" class="muted"></span></div>
+  </form>
+</section>
+
+<!-- ========== OUTFITS ========== -->
+<section id="tab-outfits" class="tab">
+  <h2>Outfits</h2>
+  <p class="muted">No six-item cap. Pick as many pieces as the look actually needs.</p>
+  <div class="bar">
+    <input id="outfit-name" placeholder="Outfit name">
+    <input id="outfit-occasion" placeholder="Occasion (wedding, work, travel)">
+    <button id="outfit-save">Save outfit</button>
+    <span id="outfit-msg" class="muted"></span>
+  </div>
+  <details id="picker-wrap"><summary>Choose items (<span id="picked-count">0</span> selected)</summary>
+    <div id="picker" class="picker"></div>
+  </details>
+  <div id="outfit-list"></div>
+</section>
+
+<!-- ========== PLAN ========== -->
+<section id="tab-plan" class="tab">
+  <h2>Combinations that work together</h2>
+  <p class="muted">Ranked by colour theory, formality consistency and rotation &mdash; plus
+  any rules learned from your <a href="#" data-goto="style">style sources</a>.
+  This works with no API key at all.</p>
+  <div class="bar">
+    <label class="inline">Temp &deg;C <input id="c-temp" type="number" value="26" style="width:5rem"></label>
+    <label class="inline">Occasion <select id="c-formality"></select></label>
+    <label class="inline">Show <input id="c-limit" type="number" value="6" min="1" max="20" style="width:4rem"></label>
+    <button id="c-go">Show combinations</button>
+    <span id="c-msg" class="muted"></span>
+  </div>
+  <div id="combo-out"></div>
+
+  <h2>Pick one outfit for me</h2>
+  <div class="bar">
+    <label class="inline">Temp &deg;C <input id="s-temp" type="number" value="24" style="width:5rem"></label>
+    <label class="chk"><input type="checkbox" id="s-rain"> rain</label>
+    <label class="inline">Occasion <select id="s-formality"></select></label>
+    <button id="s-go">Suggest an outfit</button>
+  </div>
+  <div id="suggest-out"></div>
+
+  <h2>Packing list</h2>
+  <div class="bar">
+    <label class="inline">Days <input id="p-days" type="number" value="4" min="1" max="60" style="width:5rem"></label>
+    <label class="inline">Temp &deg;C <input id="p-temp" type="number" value="18" style="width:5rem"></label>
+    <label class="chk"><input type="checkbox" id="p-rain"> rain</label>
+    <button id="p-go">Build packing list</button>
+  </div>
+  <div id="pack-out"></div>
+</section>
+
+<!-- ========== STYLE SOURCES ========== -->
+<section id="tab-style" class="tab">
+  <h2>Style sources</h2>
+  <p class="muted">Saw a good YouTube video or article on colour combinations? Add it here.
+  The advice is turned into rules that reweight your combinations on the Plan page.</p>
+
+  <div class="panel">
+    <div class="bar">
+      <input id="style-input" placeholder="Paste a YouTube link, an article link, or type style notes"
+             style="flex:1;min-width:20rem">
+      <button id="style-go">Learn from this</button>
+    </div>
+    <div class="bar">
+      <label class="inline">Or a screenshot
+        <input type="file" id="style-image" accept="image/*"></label>
+      <span class="muted">Use this for Instagram &mdash; see note below.</span>
+    </div>
+    <div id="style-msg" class="muted"></div>
+    <div class="finding monotony" style="margin-top:.6rem">
+      <strong>About Instagram:</strong> reels and posts sit behind a login, so no
+      server can read them from a link &mdash; the page returns an empty shell.
+      Screenshot the post and attach it above, or paste the caption text.
+      <em>YouTube links work directly</em> (with a Gemini key) because Gemini can watch the video.
+    </div>
+  </div>
+
+  <div id="style-list"></div>
+</section>
+
+<!-- ========== INSIGHTS ========== -->
+<section id="tab-insights" class="tab">
+  <h2>Insights</h2>
+  <div id="stat-tiles" class="tiles"></div>
+  <div class="cols">
+    <div><h3>Best value <span class="muted">lowest cost per wear</span></h3><div id="best"></div></div>
+    <div><h3>Worst value <span class="muted">highest cost per wear</span></h3><div id="worst"></div></div>
+  </div>
+  <h3>Gaps &amp; imbalances</h3>
+  <div id="gaps"></div>
+  <h3>Likely duplicate purchases</h3>
+  <div id="dupes"></div>
+</section>
+
+<!-- ========== PHOTOS ========== -->
+<section id="tab-photos" class="tab">
+  <h2>Import photos</h2>
+  <p class="muted">The folder is indexed <strong>read-only</strong>. Files are never
+  copied, moved, modified or uploaded. EXIF dates are read to build wear history;
+  GPS is detected and deliberately discarded.</p>
+  <div class="bar">
+    <input id="import-path" placeholder="C:\Users\you\Pictures" style="min-width:22rem">
+    <button id="import-go">Index folder</button>
+    <span id="import-msg" class="muted"></span>
+  </div>
+  <div id="photo-grid" class="grid"></div>
+</section>
+
+<!-- ========== DATA ========== -->
+<section id="tab-data" class="tab">
+  <h2>Your data</h2>
+  <p>It lives in one SQLite file you own: <code id="db-path"></code></p>
+  <p class="muted">No quota, no subscription, no shutdown risk. Copy the file to back it up.</p>
+  <p>
+    <a class="btn" href="/api/export" download>Export everything (JSON)</a>
+    <a class="btn" href="/api/export.csv" download>Export items (CSV)</a>
+  </p>
+  <h3>Sample data</h3>
+  <p class="muted">The app ships with a demo wardrobe so every screen has something
+  in it. Remove it once your own clothes are in &mdash; your own items, photos and
+  wear history are untouched.</p>
+  <p><button id="demo-remove" class="ghost">Remove sample data</button>
+    <span id="demo-msg" class="muted"></span></p>
+
+  <h3>How this differs from Google Photos Wardrobe</h3>
+  <div id="compare"></div>
+</section>
+
+<!-- ========== SETTINGS ========== -->
+<section id="tab-settings" class="tab">
+  <h2>AI settings</h2>
+  <div class="panel">
+    <p><strong>Your key is never stored in this project or in the code.</strong>
+    It is written to a file in your home folder, readable only by you:</p>
+    <p><code id="cfg-path"></code></p>
+    <p class="muted">It is never sent to the browser, never logged, and never sent
+    anywhere except Google's Gemini endpoint. Delete that file, or press Remove
+    below, and the app falls back to offline mode with every core feature intact.</p>
+
+    <div class="bar">
+      <input id="key-input" type="password" placeholder="Paste your Gemini API key"
+             autocomplete="off" style="flex:1;min-width:18rem">
+      <button id="key-test" class="ghost">Test</button>
+      <button id="key-save">Save</button>
+      <button id="key-clear" class="ghost">Remove</button>
+    </div>
+    <div id="key-msg" class="muted"></div>
+
+    <div class="bar" style="margin-top:.8rem">
+      <label class="inline">Text model
+        <input id="model-input" placeholder="auto-detect (recommended)" style="min-width:13rem"></label>
+      <label class="inline">Image model
+        <input id="image-model-input" placeholder="auto-detect" style="min-width:13rem"></label>
+      <button id="model-save" class="ghost">Set models</button>
+      <label class="chk"><input type="checkbox" id="ai-enabled"> AI features enabled</label>
+    </div>
+    <p class="muted">Left blank, the app asks your key which models it can use and
+    picks the best fast one automatically, so it keeps working when Google renames models.</p>
+  </div>
+
+  <h3>Where to get a key</h3>
+  <div class="finding gap">
+    <strong>Important:</strong> a <em>Google AI Pro / Ultra subscription is not the same
+    thing as an API key</em>, and does not by itself grant API access. API keys come
+    from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+    and are billed separately &mdash; there is a free tier that is more than enough
+    for this app's usage.
+  </div>
+
+  <h3>What AI is used for</h3>
+  <table><thead><tr><th>Feature</th><th>Without a key</th><th>With a key</th></tr></thead>
+  <tbody>
+    <tr><td>Outfit combinations</td><td class="yes">Full colour-theory engine</td><td class="yes">Same, plus your learned rules</td></tr>
+    <tr><td>Cost per wear, gaps, packing</td><td class="yes">Fully working</td><td class="yes">Fully working</td></tr>
+    <tr><td>Product link import</td><td class="yes">Structured data + keywords</td><td class="yes">Cleaner attribute extraction</td></tr>
+    <tr><td>Style notes / articles</td><td>Basic pattern matching</td><td class="yes">Proper rule extraction</td></tr>
+    <tr><td>YouTube videos</td><td class="no">Not possible</td><td class="yes">Gemini watches the video</td></tr>
+    <tr><td>Screenshots (Instagram)</td><td class="no">Not possible</td><td class="yes">Gemini reads the image</td></tr>
+    <tr><td><strong>Product images from a worn photo</strong></td><td class="no">Crop only</td><td class="yes">Generated ghost-mannequin shot</td></tr>
+  </tbody></table>
+</section>
+
+</main>
+
+<!-- ========== ITEM DETAIL ========== -->
+<div id="detail" class="detail" hidden>
+  <div class="detail-bar">
+    <button class="icon" id="d-back" aria-label="Back">&#8592;</button>
+    <span class="grow"></span>
+    <button class="icon" id="d-del" aria-label="Delete">&#128465;</button>
+  </div>
+  <div class="detail-body" id="d-body"></div>
+</div>
+
+<div id="toast"></div>
+<!-- The backend. The original app served /api/* from Python; these two
+     files answer the same calls in the browser, so app.js below is the
+     unmodified file from the original app and the UI is identical. -->
+<script src="assets/wardrobe/store.js"></script>
+<script src="assets/wardrobe/api.js"></script>
+<script src="assets/wardrobe/app.js"></script>
+</body>
+</html>
