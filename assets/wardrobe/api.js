@@ -318,6 +318,20 @@
       // Photo upload works; only the processing downstream of it does not.
       // The UI sends raw base64 and expects a path back, which it then PATCHes
       // onto the item — so we hand back a handle into IndexedDB.
+      // Pull an image the page pointed at, when the first attempt was skipped
+      // or failed. Same proxies, same storage as an upload.
+      if (path === '/api/photo/fetch') {
+        const src = String((body && body.url) || '').trim();
+        if (!src) return json({ error: 'No image address to fetch.' }, 400);
+        const dataUrl = await WProduct.fetchImage(src);
+        if (!dataUrl) {
+          return json({ error: 'The shop would not serve that image to us.' }, 400);
+        }
+        const key = 'p' + Date.now() + Math.random().toString(36).slice(2, 7);
+        await WStore.putPhoto(key, dataUrl);
+        return json({ ok: true, photo_path: 'idb:' + key });
+      }
+
       if (path === '/api/photo/upload' || path === '/api/photo/store') {
         const b64 = body && (body.data_b64 || body.dataB64);
         const dataUrl = (body && body.data_url) ||

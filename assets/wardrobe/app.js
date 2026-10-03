@@ -498,6 +498,94 @@ $('#add-form').addEventListener('submit', async (ev) => {
 });
 
 /* "View it in the closet" links appear in several panels, so handle them once. */
+/* The draft preview. Kept as a function because attaching an image re-renders
+   it: the photo the page offered cannot always be fetched — a CDN may refuse
+   the proxy — so there is always a way to supply one by hand. */
+function renderProductDraft() {
+  const d = productDraft;
+  if (!d) { $('#prod-preview').innerHTML = ''; return; }
+
+  const rows = [
+    ['Name', d.name], ['Brand', d.brand], ['Category', d.category],
+    ['Subcategory', d.subcategory], ['Colour', d.colour], ['Pattern', d.pattern],
+    ['Material', d.material], ['Size', d.size], ['Formality', d.formality],
+    ['Seasons', d.seasons],
+    ['Price', d.price ? money(d.price, d.currency) : ''],
+  ].filter(([, v]) => v);
+
+  // Prefer the copy we hold: the retailer's own URL can stop working, and some
+  // refuse to serve it anywhere but their own page.
+  const shown = d.photo_path || d.image_url || '';
+  const kept = !!d.photo_path;
+
+  $('#prod-preview').innerHTML = `
+    <div class="draft">
+      ${shown ? `<img src="${esc(shown)}" alt="" referrerpolicy="no-referrer">` : ''}
+      <div style="flex:1">
+        <table>${rows.map(([k, v]) =>
+          `<tr><th style="width:8rem">${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
+        <p class="muted" style="margin:.5rem 0 0">
+          ${kept
+            ? 'Photo saved with this draft.'
+            : (d.image_url
+                ? 'That page has a photo but it could not be fetched — the shop may '
+                  + 'block it. Try again, or choose a picture yourself.'
+                : 'No photo found on that page. You can add one yourself.')}
+        </p>
+        <div class="bar" style="margin-top:.4rem">
+          ${d.image_url && !kept
+            ? '<button id="prod-grab" class="ghost">Try the photo again</button>' : ''}
+          <label class="btn ghost" for="prod-image">
+            ${kept ? 'Replace the photo' : 'Choose a picture'}</label>
+          <input type="file" id="prod-image" accept="image/*" hidden>
+        </div>
+        <p class="muted" style="margin:.5rem 0 0">This is a draft. Confirm to load it into
+        the form below, then edit anything before saving.</p>
+        <div class="bar" style="margin-top:.5rem">
+          <button id="prod-confirm">Confirm &amp; edit in form</button>
+          <button id="prod-discard" class="ghost">Discard</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* Store an image against the draft and show it. */
+async function attachToDraft(dataUrl) {
+  const stored = await post('/api/photo/store', { data_b64: dataUrl.split(',')[1] });
+  productDraft.photo_path = stored.photo_path;
+  renderProductDraft();
+  toast('Photo attached to the draft.');
+}
+
+document.addEventListener('change', (ev) => {
+  if (ev.target.id !== 'prod-image' || !productDraft) return;
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try { await attachToDraft(String(reader.result)); }
+    catch (err) { $('#prod-msg').textContent = 'Could not attach: ' + err.message; }
+  };
+  reader.readAsDataURL(file);
+});
+
+document.addEventListener('click', async (ev) => {
+  if (ev.target.id !== 'prod-grab' || !productDraft) return;
+  ev.target.disabled = true;
+  ev.target.textContent = 'Fetching…';
+  try {
+    const r = await post('/api/photo/fetch', { url: productDraft.image_url });
+    productDraft.photo_path = r.photo_path;
+    renderProductDraft();
+    toast('Photo fetched.');
+  } catch (err) {
+    ev.target.disabled = false;
+    ev.target.textContent = 'Try the photo again';
+    $('#prod-msg').textContent = 'Still could not fetch it: ' + err.message
+      + ' Save the picture from the shop and choose it here instead.';
+  }
+});
+
 document.addEventListener('click', (ev) => {
   const link = ev.target.closest('[data-open-item]');
   if (!link) return;
@@ -1194,28 +1282,10 @@ $('#prod-go').addEventListener('click', async () => {
     const d = await post('/api/product/preview',
       { url, use_ai: $('#prod-ai').checked });
     productDraft = d;
-    const rows = [
-      ['Name', d.name], ['Brand', d.brand], ['Category', d.category],
-      ['Subcategory', d.subcategory], ['Colour', d.colour], ['Pattern', d.pattern],
-      ['Material', d.material], ['Size', d.size], ['Formality', d.formality],
-      ['Seasons', d.seasons],
-      ['Price', d.price ? money(d.price, d.currency) : ''],
-    ].filter(([, v]) => v);
+    // The table is built inside renderProductDraft now, since attaching a
+    // photo re-renders the whole draft.
     $('#prod-msg').textContent = (d._notes || []).join(' ');
-    $('#prod-preview').innerHTML = `
-      <div class="draft">
-        ${d.image_url ? `<img src="${esc(d.image_url)}" alt="" referrerpolicy="no-referrer">` : ''}
-        <div style="flex:1">
-          <table>${rows.map(([k, v]) =>
-            `<tr><th style="width:8rem">${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
-          <p class="muted" style="margin:.5rem 0 0">This is a draft. Confirm to load it into
-          the form below, then edit anything before saving.</p>
-          <div class="bar" style="margin-top:.5rem">
-            <button id="prod-confirm">Confirm &amp; edit in form</button>
-            <button id="prod-discard" class="ghost">Discard</button>
-          </div>
-        </div>
-      </div>`;
+    renderProductDraft();
   } catch (err) {
     $('#prod-msg').textContent = 'Could not read that page: ' + err.message;
   }
