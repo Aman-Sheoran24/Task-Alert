@@ -365,19 +365,29 @@
           return json({ error: 'That does not look like a link. Paste the full ' +
                         'product URL, starting with https://' }, 400);
         }
+        const vocab = { categories: WStore.CATEGORIES, formalities: WStore.FORMALITIES,
+                        seasons: WStore.SEASONS };
+        const colourWords = WStore.HUES_FOR_MATCH;
+
+        // Scrape first. It reads the structured data the retailer publishes,
+        // which is exact and needs no key; the model is the fallback for pages
+        // that render their content with JavaScript or block the proxies.
+        let scrapeError = '';
+        try {
+          return json(await WProduct.scrapeProduct(url, vocab, colourWords));
+        } catch (e) {
+          scrapeError = e.message;
+        }
+
         if (!geminiKey()) {
-          // Worth being specific: this is not the rembg limitation, it is that
-          // a page cannot fetch another site, and the key is the way around it.
-          return json({ error: 'Reading a product page needs a Gemini key. A web ' +
-            'page cannot fetch another site — retailers do not permit it — so ' +
-            'Gemini fetches and reads the page instead. Add a key under AI ' +
-            'settings, or fill the form in by hand.' }, 400);
+          return json({ error: scrapeError + ' Some shops serve an empty shell to ' +
+            'anything but a real browser. Adding a Gemini key under AI settings ' +
+            'lets it read the page instead — or fill the form in by hand.' }, 400);
         }
         try {
-          return json(await WVision.fetchProduct(url, geminiKey(), GEMINI_MODEL, {
-            categories: WStore.CATEGORIES, formalities: WStore.FORMALITIES,
-            seasons: WStore.SEASONS,
-          }));
+          const d = await WVision.fetchProduct(url, geminiKey(), GEMINI_MODEL, vocab);
+          d._notes = [scrapeError + ' Read it with Gemini instead.'].concat(d._notes || []);
+          return json(d);
         } catch (e) {
           return json({ error: e.message }, 400);
         }
