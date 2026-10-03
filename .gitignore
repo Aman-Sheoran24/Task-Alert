@@ -15,3 +15,5 @@ node_modules/
 # also swallowed assets/wardrobe/, because git is case-insensitive here.
 /WardRobe.zip
 /WardRobe/
+__pycache__/
+*.pyc

@@ -316,26 +316,47 @@ const WProduct = (function () {
     return '';
   }
 
+  // How long to wait on one source before giving up on it. A proxy that hangs
+  // should not hold up the ones that would have answered.
+  const PROXY_TIMEOUT = 9000;
+  const READER_TIMEOUT = 25000;
+
   // Two passes. First the plain proxies, whose markup carries the structured
-  // data and gives the most accurate read. Only if none of them yields a
+  // data and gives the most accurate read; only if none of them yields a
   // product do we spend a slower request on a reader that renders the page.
+  //
+  // Within a pass the sources race rather than queue. Run in turn, a dead proxy
+  // costs its full timeout before the next is even tried, and three of those is
+  // most of the wait — in parallel the pass takes as long as its quickest
+  // useful answer.
   async function scrapeProduct(url, vocab, colourWords, onTry) {
     const tried = [];
     let lastText = '';
 
-    const attempt = async (via, asText) => {
+    const attempt = async (via, asText, timeout) => {
       const host = via.replace(/^https?:\/\//, '').split('/')[0];
       if (onTry) onTry(host);
+
       let body;
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = setTimeout(() => ctl && ctl.abort(), timeout);
       try {
-        const res = await fetch(via);
-        if (!res.ok) { tried.push(host + ' (HTTP ' + res.status + ')'); return null; }
+        const res = await fetch(via, ctl ? { signal: ctl.signal } : undefined);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         body = await res.text();
       } catch (e) {
-        tried.push(host + ' (' + (e && e.message ? e.message : 'blocked') + ')');
-        return null;
+        const why = (e && e.name === 'AbortError') ? 'too slow'
+                  : (e && e.message ? e.message : 'blocked');
+        tried.push(host + ' (' + why + ')');
+        throw e;
+      } finally {
+        clearTimeout(timer);
       }
-      if (!body || body.length < 200) { tried.push(host + ' (empty)'); return null; }
+
+      if (!body || body.length < 200) {
+        tried.push(host + ' (empty)');
+        throw new Error('empty');
+      }
 
       const draft = asText
         ? parseText(body, url, vocab, colourWords)
@@ -346,7 +367,7 @@ const WProduct = (function () {
       if (!draft || !draft.name) {
         lastText = lastText || body;
         tried.push(host + ' (no product data)');
-        return null;
+        throw new Error('no product data');
       }
       draft._notes.push('Fetched through ' + host + ', because a web page cannot ' +
                         'load another site directly.');
@@ -354,14 +375,22 @@ const WProduct = (function () {
       return draft;
     };
 
-    for (const build of PROXIES) {
-      const got = await attempt(build(url), false);
-      if (got) return got;
-    }
-    for (const build of READERS) {
-      const got = await attempt(build(url), true);
-      if (got) return got;
-    }
+    // Resolves with the first source to produce a usable draft, or rejects
+    // once every one of them has failed.
+    const race = (builders, asText, timeout) => {
+      const runs = builders.map((b) => attempt(b(url), asText, timeout));
+      if (typeof Promise.any === 'function') return Promise.any(runs);
+      // Older engines: settle them all and take the first that worked.
+      return Promise.all(runs.map((p) => p.then(
+        (v) => ({ ok: true, v }), () => ({ ok: false })))).then((all) => {
+          const hit = all.find((x) => x.ok);
+          if (!hit) throw new Error('all failed');
+          return hit.v;
+        });
+    };
+
+    try { return await race(PROXIES, false, PROXY_TIMEOUT); } catch (_) { /* readers next */ }
+    try { return await race(READERS, true, READER_TIMEOUT); } catch (_) { /* nothing left */ }
 
     const err = new Error('Could not read that page. Tried: ' + tried.join(', ') + '.');
     err.tried = tried;
