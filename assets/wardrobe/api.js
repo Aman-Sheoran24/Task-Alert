@@ -44,6 +44,16 @@
     catch (_) { return ''; }
   }
 
+  const GEMINI_MODEL = 'gemini-2.5-pro';
+
+  // The UI sends raw base64 for some calls and a full data URL for others.
+  function dataUrlOf(body) {
+    if (!body) return '';
+    if (body.data_url) return body.data_url;
+    const b64 = body.data_b64 || body.dataB64;
+    return b64 ? 'data:' + (body.mime || 'image/png') + ';base64,' + b64 : '';
+  }
+
   const AVOID_RE = /\b(avoid|never|don'?t|do not|clash)\b/i;
 
   // The fallback when no key is set. Deliberately modest: it looks for two
@@ -76,7 +86,7 @@
   // uses the same key Task Matrix stores for Work Documentation.
   async function extractWithGemini(text) {
     const r = await realFetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent', {
+      'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey() },
         body: JSON.stringify({ contents: [{ parts: [{ text:
@@ -115,8 +125,13 @@
           photos: WStore.photos.size, roots: [],
           db: 'this browser (synced to your Drive)',
           ai: aiState(), style: WStore.ruleStats(),
-          local_cutout: { available: false, engine: 'none in a browser',
-                          hint: NEEDS_LOCAL },
+          local_cutout: { available: true, engine: 'canvas colour separation',
+                          hint: 'Garment separation runs on this device, with no ' +
+                                'API call and nothing leaving your machine. It ' +
+                                'works from the background colour, so a plain or ' +
+                                'flat-lay backdrop gives a clean cut and a busy ' +
+                                'room does not. Use Gemini to split a whole ' +
+                                'outfit into separate garments.' },
         });
       }
       if (path === '/api/settings') return json(aiState());
@@ -246,6 +261,58 @@
         await WStore.putPhoto(key, dataUrl);
         return json({ ok: true, photo_path: 'idb:' + key, path: 'idb:' + key });
       }
+      if (path === '/api/photo/detect') {
+        if (!geminiKey()) {
+          return json({ error: 'Separating the individual garments out of a photo ' +
+            'needs a Gemini API key. Add one in Task Matrix under Work ' +
+            'Documentation, or use Crop by hand to draw a box around one garment ' +
+            'at a time.' }, 400);
+        }
+        const url = dataUrlOf(body);
+        if (!url) return json({ error: 'The upload was not valid image data.' }, 400);
+        let found;
+        try {
+          found = await WVision.detectGarments(url, geminiKey(), GEMINI_MODEL, {
+            categories: WStore.CATEGORIES, formalities: WStore.FORMALITIES,
+            seasons: WStore.SEASONS,
+          });
+        } catch (e) {
+          return json({ error: e.message }, 400);
+        }
+        return json({ items: found, note: found.length
+          ? 'Found ' + found.length + ' garment(s). Each one is cropped out of ' +
+            'your photo separately.'
+          : 'No wearable items were found in that photo.' });
+      }
+
+      if (path === '/api/photo/cutout') {
+        const url = dataUrlOf(body);
+        if (!url) return json({ error: 'No image to work from.' }, 400);
+        let res;
+        try { res = await WVision.localCutout(url); }
+        catch (e) { return json({ error: 'Local cutout failed: ' + e.message }, 400); }
+
+        // Each piece is stored like any other upload, so the draft can carry a
+        // handle rather than a megabyte of base64.
+        const items = [];
+        for (const piece of res.items) {
+          const key = 'p' + Date.now() + Math.random().toString(36).slice(2, 7);
+          await WStore.putPhoto(key, piece.data_url);
+          items.push(Object.assign({}, piece,
+            { photo_path: 'idb:' + key, cutout_path: 'idb:' + key }));
+        }
+        if (items.length && body && body.item_id) {
+          try { WStore.updateItem(body.item_id, { photo_path: items[0].photo_path }); }
+          catch (_) {}
+        }
+        return json({ items: items, engine: 'canvas colour separation (on this device)',
+          note: items.length
+            ? 'Cut one garment out on this device — no API call, no cost. For a ' +
+              'photo holding several garments, use Gemini to split them.'
+            : 'The garment could not be told apart from the background. A plainer ' +
+              'backdrop works best — or crop by hand, or use Gemini.' });
+      }
+
       if (path.indexOf('/api/photo/') === 0 || path === '/api/product/preview') {
         return json({ error: NEEDS_LOCAL }, 501);
       }
