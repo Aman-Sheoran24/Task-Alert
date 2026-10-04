@@ -136,10 +136,35 @@ const WStore = (function () {
   // pointing at them. Time plus a per-tick counter collides only if two
   // devices create a record in the same millisecond at the same point in that
   // millisecond's sequence. Well inside Number's safe integer range.
+  // A number this device picks once and keeps. Time alone is not enough: two
+  // devices adding their first garment in the same millisecond, each with its
+  // counter at the same value, would produce the same id — unlikely in a day's
+  // use, but certain during a bulk import on two machines at once. A device
+  // number makes the id depend on WHICH device as well as WHEN, so devices with
+  // different numbers can never collide however their clocks line up.
+  const DEVICE_KEY = 'tm_wardrobe_device';
+  let deviceNo = 0;
+  try {
+    deviceNo = parseInt(localStorage.getItem(DEVICE_KEY), 10);
+    if (!(deviceNo >= 0 && deviceNo <= 999)) {
+      deviceNo = Math.floor(Math.random() * 1000);
+      localStorage.setItem(DEVICE_KEY, String(deviceNo));
+    }
+  } catch (_) {
+    deviceNo = Math.floor(Math.random() * 1000);
+  }
+
+  // seconds × 1,000,000  +  device (0-999) × 1000  +  counter (0-999)
+  //
+  // Seconds rather than milliseconds because the number has to stay under
+  // Number.MAX_SAFE_INTEGER (about 9.0e15) and this comes to roughly 1.8e15,
+  // leaving the six digits the device and counter need. The counter keeps a
+  // single device's records apart within one second, and rolls at 1000 — far
+  // more than anyone adds by hand in a second.
   let tick = 0;
   function nextId() {
     tick = (tick + 1) % 1000;
-    const id = Date.now() * 1000 + tick;
+    const id = Math.floor(Date.now() / 1000) * 1000000 + deviceNo * 1000 + tick;
     data.seq = Math.max(data.seq || 1, id + 1);
     return id;
   }
