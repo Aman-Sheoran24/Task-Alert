@@ -481,6 +481,14 @@
     if (init && init.body) {
       try { body = JSON.parse(init.body); } catch (_) { body = init.body; }
     }
+    // Wait for the photos to come out of IndexedDB before answering anything.
+    // Starting that load was not enough: the first /api/items raced it and won,
+    // so every card resolved to an empty photo_path and fell back to a colour
+    // swatch — while opening one item later worked, because by then it had
+    // finished. Awaiting a settled promise costs a microtask.
+    if (window.wardrobeReady) {
+      try { await window.wardrobeReady; } catch (_) { /* carry on without them */ }
+    }
     try {
       return await route(method, u.pathname.replace(/^.*(\/api\/)/, '$1'),
                          u.searchParams, body);

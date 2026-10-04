@@ -70,3 +70,15 @@
     .m-set  { background: #2ecc71; color: white; }
     .m-skip { background: #ecf0f1; color: #555; font-weight: 400; }
 
+    /* ── Wardrobe launcher ────────────────────────────────────────── */
+    /* Wardrobe is its own page rather than a panel, so its launcher is a link.
+       It is styled to match the button launchers beside it: an anchor needs
+       the display, centring and underline reset that a button gets free. */
+    .w-launch {
+      display: block; width: 100%; margin-top: 8px; padding: 11px;
+      border: none; border-radius: 10px; background: #0e7c86; color: #fff;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      text-align: center; text-decoration: none; font-family: inherit;
+    }
+    .w-launch:active { opacity: 0.85; }
+
