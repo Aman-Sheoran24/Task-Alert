@@ -31,6 +31,24 @@ const GOOGLE_SCOPES = [
 // silently instead of showing the consent screen again. Both pages read it.
 const GCAL_REMEMBER_KEY = 'tm_gcal_remember';
 
+// Where the synced data lives in your Drive.
+//
+// A folder the app creates itself, so it is visible and you can open, copy or
+// back it up like anything else. drive.file reaches only what this app made,
+// which is why it has to be our folder rather than one you created by hand —
+// that would need either access to your whole Drive, or the Google Picker so
+// you can hand this one folder over explicitly. Either is available; neither
+// is needed for the app to work.
+//
+// It is private the moment it is created: a new Drive folder is visible to
+// its owner alone until you share it.
+//
+// To point at a folder you own instead, paste its id here — the long string
+// in its URL after /folders/. That only works once the app has been granted
+// access to it, through the Picker or a wider scope.
+const DRIVE_FOLDER_NAME = 'Task Matrix';
+const DRIVE_FOLDER_ID = '';
+
 // Your timezone, and the time of the daily review (24h clock, CAL_TIMEZONE).
 // 10 + 0 = 10:00 AM.  7 + 30 = 7:30 AM.  18 + 45 = 6:45 PM.
 // Change these, redeploy, then hit Re-sync: today's review event moves to the

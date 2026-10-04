@@ -575,11 +575,42 @@
   // redraw if anything came back.
   if (typeof WDrive !== 'undefined') {
     WDrive.onConnect = () => {
-      WStore.syncNow().then((changed) => {
+      chip('Syncing…');
+      WStore.syncNow().then(async (changed) => {
         if (changed && typeof window.reloadWardrobeViews === 'function') {
           window.reloadWardrobeViews();
         }
-      }).catch(() => { /* nothing to show for a failed sync */ });
+        chip('Synced to Drive', await WDrive.folderUrl());
+      }).catch((e) => chip('Sync failed: ' + e.message));
     };
+  }
+
+  // One small control, bottom right: what the sync is doing, and the way to
+  // start it. Without this the page could only sync if you had already
+  // connected on the task board, which is a strange thing to require of
+  // someone who opened the wardrobe first.
+  function chip(text, href) {
+    const el = typeof document !== 'undefined' && document.getElementById('sync-chip');
+    if (!el) return;
+    el.textContent = text;
+    el.dataset.href = href || '';
+    el.title = href ? 'Open the folder in Drive' : 'Drive sync';
+  }
+
+  onDoc('click', (e) => {
+    if (!e.target || e.target.id !== 'sync-chip') return;
+    const href = e.target.dataset.href;
+    if (href) { window.open(href, '_blank', 'noopener'); return; }
+    if (typeof WDrive === 'undefined') return;
+    chip('Connecting…');
+    if (!WDrive.connect()) chip('Could not reach Google');
+  });
+
+  // Say where things stand once we know, rather than leaving "Checking…" up.
+  if (typeof WDrive !== 'undefined') {
+    WDrive.ready.then(async (ok) => {
+      if (ok) chip('Synced to Drive', await WDrive.folderUrl());
+      else chip('Saved on this device · Connect');
+    });
   }
 })();

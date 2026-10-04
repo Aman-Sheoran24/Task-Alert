@@ -268,15 +268,28 @@ const WStore = (function () {
     return changed;
   }
 
+  // The file lives in a visible Drive folder now. Earlier versions kept it in
+  // the hidden appData folder, so the first pull looks there too and folds
+  // anything found into the merge — nothing is stranded, and because merging
+  // is by id this is safe to repeat.
   async function pull() {
     if (typeof WDrive === 'undefined' || !WDrive.connected()) return false;
-    const remote = await WDrive.read(SYNC_FILE);
-    return mergeRemote(remote);
+    let changed = false;
+    try {
+      changed = mergeRemote(await WDrive.readFile(SYNC_FILE)) || changed;
+    } catch (e) {
+      if (e.message === 'expired') throw e;
+      // A folder we cannot reach should not stop the older copy being read.
+    }
+    try {
+      changed = mergeRemote(await WDrive.read(SYNC_FILE)) || changed;
+    } catch (_) { /* no older copy, which is the normal case */ }
+    return changed;
   }
 
   async function push() {
     if (typeof WDrive === 'undefined' || !WDrive.connected()) return;
-    await WDrive.write(SYNC_FILE, {
+    await WDrive.writeFile(SYNC_FILE, {
       schema: 1, updated_at: new Date().toISOString(),
       items: data.items, wears: data.wears, outfits: data.outfits,
       rules: data.rules, sources: data.sources,

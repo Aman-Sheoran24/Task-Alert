@@ -35,13 +35,8 @@ const WDrive = (function () {
   }
 
   // Called by the Google Identity Services script once it has loaded.
-  function initDriveSync() {
-    if (!remembered()) {
-      // Never connected here. Staying local is the right default: a page that
-      // throws up a consent screen on its own is worse than one that waits.
-      settle(false);
-      return;
-    }
+  function makeClient() {
+    if (tokenClient) return tokenClient;
     try {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
@@ -49,6 +44,7 @@ const WDrive = (function () {
         callback: (resp) => {
           if (resp && resp.access_token) {
             accessToken = resp.access_token;
+            try { localStorage.setItem(GCAL_REMEMBER_KEY, '1'); } catch (_) { /* fine */ }
             settle(true);
             if (typeof WDrive.onConnect === 'function') WDrive.onConnect();
           } else {
@@ -59,8 +55,22 @@ const WDrive = (function () {
         // lands here. Nothing to do but carry on locally.
         error_callback: () => settle(false),
       });
-      tokenClient.requestAccessToken({ prompt: '' });
     } catch (_) {
+      tokenClient = null;
+    }
+    return tokenClient;
+  }
+
+  function initDriveSync() {
+    const client = makeClient();
+    if (!client) { settle(false); return; }
+
+    // Only ever silent on load. Connecting for the first time is something the
+    // user asks for, not something a page does to them while they read it.
+    if (remembered()) {
+      try { client.requestAccessToken({ prompt: '' }); }
+      catch (_) { settle(false); }
+    } else {
       settle(false);
     }
 
@@ -100,6 +110,70 @@ const WDrive = (function () {
     return text ? JSON.parse(text) : null;
   }
 
+  // ── a real, visible folder ────────────────────────────────────────────────
+  let folderPromise = null;
+
+  function folder() {
+    if (folderPromise) return folderPromise;
+    folderPromise = (async () => {
+      if (typeof DRIVE_FOLDER_ID === 'string' && DRIVE_FOLDER_ID) {
+        return DRIVE_FOLDER_ID;                 // one you have granted access to
+      }
+      const q = encodeURIComponent(
+        "mimeType='application/vnd.google-apps.folder' and trashed=false and name='"
+        + DRIVE_FOLDER_NAME.replace(/'/g, "\\'") + "' and 'root' in parents");
+      const list = await call('GET',
+        'https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + q);
+      if (list && list.files && list.files.length) return list.files[0].id;
+      const made = await call('POST', 'https://www.googleapis.com/drive/v3/files', {
+        name: DRIVE_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: ['root'],
+      });
+      return made.id;
+    })().catch((e) => { folderPromise = null; throw e; });
+    return folderPromise;
+  }
+
+  const folderFileIds = {};    // name -> id inside that folder
+
+  async function fileInFolder(name) {
+    if (folderFileIds[name]) return folderFileIds[name];
+    const parent = await folder();
+    const q = encodeURIComponent(
+      "name='" + name + "' and trashed=false and '" + parent + "' in parents");
+    const list = await call('GET',
+      'https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + q);
+    if (list && list.files && list.files.length) {
+      folderFileIds[name] = list.files[0].id;
+    } else {
+      const made = await call('POST', 'https://www.googleapis.com/drive/v3/files',
+                              { name: name, parents: [parent] });
+      folderFileIds[name] = made.id;
+    }
+    return folderFileIds[name];
+  }
+
+  async function readFile(name) {
+    const id = await fileInFolder(name);
+    const text = await call('GET',
+      'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media', undefined, true);
+    if (!text) return null;
+    try { return JSON.parse(text); } catch (_) { return null; }
+  }
+
+  async function writeFile(name, obj) {
+    const id = await fileInFolder(name);
+    await call('PATCH',
+      'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', obj);
+  }
+
+  // Where to find it, for a link the user can click.
+  async function folderUrl() {
+    try { return 'https://drive.google.com/drive/folders/' + (await folder()); }
+    catch (_) { return ''; }
+  }
+
   const fileIds = {};          // name -> id, so we look it up once per session
 
   async function fileId(name) {
@@ -131,7 +205,20 @@ const WDrive = (function () {
       'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', obj);
   }
 
-  return { ready, connected, read, write, initDriveSync, onConnect: null };
+  // Asked for by a button. Shows the consent screen if it has to.
+  function connect() {
+    const client = makeClient();
+    if (!client) return false;
+    try {
+      client.requestAccessToken({ prompt: remembered() ? '' : 'consent' });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  return { ready, connected, read, write, readFile, writeFile, folder, folderUrl,
+           connect, initDriveSync, onConnect: null };
 })();
 
 // The GIS script calls this by name from its onload attribute.
