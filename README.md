@@ -2,8 +2,8 @@
 
 An Eisenhower (Urgent–Important) task board that schedules its reminders as **Google Calendar events in your own account** — no bot, no database, no backend server.
 
-- **Each task with a deadline** becomes a calendar event with popup reminders **5 hours** and **2 hours** before. The task name is the notification.
-- **Every day at 10:00** a recurring "Urgent + Important — daily review" event fires, with your current Q1 tasks listed in its description.
+- **Each task with a deadline** becomes a calendar event, with popups at whatever offsets `DEADLINE_REMINDERS` lists (none by default). The task name is the notification.
+- **Every day at 10:30** an "Urgent + Important — daily review" event fires, with your current Q1 tasks listed in its description. It's a short series (today plus the next couple of days, `DAILY_DAYS`), so it fires even on days you don't open the app; every sync restarts it from today, so past days drop off your calendar. It only exists while the Q1 box has tasks.
 - **Your task list syncs across every device** through a hidden, app-private file in your own Google Drive (`appDataFolder`). Sign in on any device and the same tasks appear. The alerts live in your Google Calendar. Nothing is sent to any third party.
 - **Work Documentation** — write notes by hand, or upload a voice recording and have Gemini transcribe it and draft the notes for you. Each entry is saved as a real Google Doc under `Work Documentation / dd-mm-yy_Day` in your Drive.
 - **Completed tasks are logged** in an Activity log below the board, showing whether each was on time or delayed and how long it took.
@@ -58,12 +58,14 @@ Open `index.html`, find the top of the `<script>` section, and set:
 ```js
 const GOOGLE_CLIENT_ID = '1234-abcd.apps.googleusercontent.com';
 ```
-While you're there, the timezone and times are also here if you want to change them:
+The timezone, review time and reminder settings live in `assets/core/config.js`:
 ```js
-const CAL_TIMEZONE = 'Asia/Kolkata';   // your timezone
-const DAILY_HOUR   = 10;               // daily review at 10:00
-const REMIND_5H    = 300;              // minutes before deadline
-const REMIND_2H    = 120;
+const CAL_TIMEZONE       = 'Asia/Kolkata'; // your timezone
+const DAILY_HOUR         = 10;             // daily review at 10:30
+const DAILY_MINUTE       = 30;
+const DAILY_DAYS         = 3;              // days of review on the calendar, counting today
+const DAILY_REMINDERS    = [0];            // popups per review, minutes before (one number = one popup)
+const DEADLINE_REMINDERS = [];             // popups per deadline, minutes before
 ```
 Commit and push — Vercel redeploys automatically.
 
@@ -77,7 +79,7 @@ Done. The reminders now fire on their own.
 ---
 
 ## Adjusting things later
-- **Daily time / timezone / reminder offsets** — edit the four `const` lines at the top of `index.html`, push.
+- **Daily time / timezone / reminder offsets** — edit the `const` lines in `assets/core/config.js`, push, then tap **Re-sync**. Don't edit the review event inside Google Calendar; the next sync overwrites it.
 - Want an **email reminder** as a backup too? In `taskEventBody`, add `{ method: 'email', minutes: 120 }` to the `overrides` list.
 
 ---
@@ -85,7 +87,7 @@ Done. The reminders now fire on their own.
 ## Good to know / limitations
 - **Tasks sync across devices via Google Drive.** Once you tap **Connect** on a device, the task list is read from (and written to) a hidden, app-private file in your Drive, so every signed-in device shows the same tasks. Changes you make on one device appear on another the next time it's brought to the foreground. A local copy is also kept in `localStorage` so the board still loads instantly and works offline; it reconciles with Drive on the next sync. Because the file carries each event's id, a second device **reuses** existing calendar events instead of creating duplicates.
 - **Deleting a task** leaves a small hidden "tombstone" in the synced file so the deletion propagates to your other devices (it won't reappear). These are invisible in the app.
-- **The 10:00 notification title is a fixed nudge** ("Urgent + Important — daily review"); the live task list is in the event's **description**. A live list in the popup itself would require a always-on backend, which this design deliberately avoids.
+- **The daily review notification title is a fixed nudge** ("Urgent + Important — daily review"); the live task list is in the event's **description**. A live list in the popup itself would require a always-on backend, which this design deliberately avoids.
 - **Sign-in is remembered on each device.** The first time on a device you tap **Connect** once and approve; after that the app reconnects to Google silently on later visits and refreshes your session in the background, so you won't normally have to tap Connect again. You'll only be asked to sign in again if you've been signed out of Google itself for a long while. Your existing calendar events keep firing regardless.
 - **Editing or removing a task** updates/deletes its calendar event on the next sync automatically.
 - Must be served over **https** (Vercel) or `http://localhost` — Google sign-in won't run from a `file://` page.

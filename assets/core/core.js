@@ -286,12 +286,15 @@ function taskEventBody(t) {
   };
 }
 
-// Single-day review event for TODAY at DAILY_HOUR, listing current Q1 tasks.
-// Deliberately NOT a recurring event: an infinite RRULE:FREQ=DAILY event shows up
-// on every future day forever, even days with zero Urgent+Important tasks, which
-// is what was flooding the calendar. Instead we create at most one event, dated
-// today, and only when there's actually something to review — so an empty board
-// means no event at all, and a busy board only ever shows on the day it applies to.
+// Review event at DAILY_HOUR:DAILY_MINUTE, listing current Q1 tasks: a SHORT
+// series, today plus the next DAILY_DAYS-1 days, never an open-ended one.
+//   - An infinite RRULE:FREQ=DAILY filled every future day forever, which is
+//     what flooded the calendar.
+//   - A one-off dated today only ever existed if the app was opened that day,
+//     so on a day you didn't open it, nothing fired.
+// A short series fires on its own for a few days, and every sync PUTs it again
+// starting today, so the days already gone fall off the calendar. An empty
+// Q1 box means no series at all.
 const DAILY_SUMMARY = '🔴 Urgent + Important — daily review';
 
 function dailyEventBody(q1, dateStr) {
@@ -304,7 +307,12 @@ function dailyEventBody(q1, dateStr) {
     description: 'Urgent + Important right now:\n' + q1.map((t, i) => `${i + 1}. ${t.text}`).join('\n'),
     start: { dateTime: `${dateStr}T${hhmm(startMin)}:00`, timeZone: CAL_TIMEZONE },
     end:   { dateTime: `${dateStr}T${hhmm(startMin + 15)}:00`, timeZone: CAL_TIMEZONE },
-    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] },
+    recurrence: [`RRULE:FREQ=DAILY;COUNT=${Math.max(1, DAILY_DAYS | 0)}`],
+    reminders: {
+      useDefault: false,
+      // Google rejects more than 5 overrides, which would fail the whole sync.
+      overrides: DAILY_REMINDERS.slice(0, 5).map(m => ({ method: 'popup', minutes: m })),
+    },
     // Marker Google stores on the event and lets us query back by. This is what
     // makes today's review event findable from ANY device, so we update the one
     // that already exists instead of adding another. See findDailyEvents().
@@ -356,7 +364,8 @@ async function syncCalendar() {
   }
 }
 
-const DAILY_EVENT_KEY   = 'tm_daily_event_v2';   // JSON {id, date} — per-device hint, now only a fallback
+const DAILY_EVENT_KEY   = 'tm_daily_series';     // JSON {id} of the series — per-device hint, only a fallback
+const LEGACY_DAILY_KEY_V2 = 'tm_daily_event_v2'; // one-off-per-day hint from before the series, no longer read
 const LEGACY_DAILY_KEY  = 'tm_daily_event';       // old infinitely-recurring event id, one-time cleanup
 
 // Marker stamped onto every review event we create (see dailyEventBody). Google
@@ -368,38 +377,45 @@ const LEGACY_DAILY_KEY  = 'tm_daily_event';       // old infinitely-recurring ev
 const DAILY_MARKER_KEY = 'tmDailyReview';
 const DAILY_MARKER_VAL = '1';
 
-// Every review event of ours in today's window. Two passes, because events made
-// before this fix carry no marker:
-//   1. by marker  — exact; catches everything created from now on, any device
-//   2. today's events, filtered by title — catches the pre-existing duplicates
-//      so they get cleaned up too
-// Pass 2 reads the day's events rather than using Calendar's text search, whose
-// matching on an emoji title isn't something to depend on. BOTH passes keep only
-// an exact DAILY_SUMMARY match, so we can never delete an event that isn't ours.
-async function findDailyEvents() {
-  const from = new Date(); from.setHours(0, 0, 0, 0);
-  const to   = new Date(from); to.setDate(to.getDate() + 1);
+// How far back the cleanup looks for review events left by earlier versions:
+// one-offs from the days before the series, and any copies a second device
+// made. Past this the calendar is left alone.
+const DAILY_SWEEP_DAYS = 60;
 
-  const base = '/calendars/primary/events?singleEvents=true&orderBy=startTime' +
+// Every review event of ours from DAILY_SWEEP_DAYS ago to the end of the
+// series. Two passes, because events made by older versions carry no marker:
+//   1. by marker  — exact; catches everything created since the marker existed
+//   2. by title   — catches the older copies so they get cleaned up too
+// Both read with singleEvents=true, so a series comes back as its instances,
+// each pointing at the series by recurringEventId. Pass 2 reads the events
+// rather than using Calendar's text search, whose matching on an emoji title
+// isn't something to depend on. BOTH passes keep only an exact DAILY_SUMMARY
+// match, so we can never delete an event that isn't ours.
+async function findDailyEvents() {
+  const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - DAILY_SWEEP_DAYS);
+  const to   = new Date(); to.setHours(0, 0, 0, 0);   to.setDate(to.getDate() + Math.max(1, DAILY_DAYS | 0) + 1);
+
+  const base = '/calendars/primary/events?singleEvents=true' +
                '&timeMin=' + encodeURIComponent(from.toISOString()) +
                '&timeMax=' + encodeURIComponent(to.toISOString());
 
-  // singleEvents=true expands a recurring series into one instance per day, so
-  // what comes back for an old RRULE:FREQ=DAILY event is today's instance, whose
-  // id is the master's plus a timestamp. recurringEventId points at the master —
-  // we keep it, because deleting the instance only skips a single day.
   const found = new Map();   // id -> event, de-duped across both passes
-  const collect = (res) => {
-    for (const ev of (res && res.items) || []) {
-      if (ev.id && ev.summary === DAILY_SUMMARY) found.set(ev.id, ev);
-    }
+  const collect = async (query) => {
+    let page = '';
+    do {
+      const res = await gcal('GET', base + query + (page ? '&pageToken=' + encodeURIComponent(page) : ''));
+      for (const ev of (res && res.items) || []) {
+        if (ev.id && ev.summary === DAILY_SUMMARY) found.set(ev.id, ev);
+      }
+      page = res && res.nextPageToken;
+    } while (page);
   };
 
-  collect(await gcal('GET', base + '&maxResults=50' +
-    '&privateExtendedProperty=' + encodeURIComponent(DAILY_MARKER_KEY + '=' + DAILY_MARKER_VAL)));
+  await collect('&maxResults=250' +
+    '&privateExtendedProperty=' + encodeURIComponent(DAILY_MARKER_KEY + '=' + DAILY_MARKER_VAL));
 
   try {
-    collect(await gcal('GET', base + '&maxResults=250'));
+    await collect('&maxResults=2500');
   } catch (e) {
     if (e.message === 'expired') throw e;   // legacy sweep is best-effort
   }
@@ -418,6 +434,7 @@ async function syncDailyEvent() {
     catch (e) { if (e.message === 'expired') throw e; }
     localStorage.removeItem(LEGACY_DAILY_KEY);
   }
+  localStorage.removeItem(LEGACY_DAILY_KEY_V2);
 
   const q1 = tasks.filter(t => !t.done && !t.deleted && t.quad === 1);
   const today = todayStr();
@@ -432,7 +449,7 @@ async function syncDailyEvent() {
     // that a failed lookup can't be the reason we add yet another copy.
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(DAILY_EVENT_KEY) || 'null'); } catch (_) {}
-    if (saved && saved.id && saved.date === today) existing = [{ id: saved.id }];
+    if (saved && saved.id) existing = [{ id: saved.id + '_x', recurringEventId: saved.id }];
   }
 
   const drop = async (id) => {
@@ -440,38 +457,40 @@ async function syncDailyEvent() {
     catch (e) { if (e.message === 'expired') throw e; }   // already gone is fine
   };
 
-  // The very first version of this app created the review event with
-  // RRULE:FREQ=DAILY — a series that never ends. Every device that connected back
-  // then made its own, and they still fire every morning. They have to be deleted
-  // at the MASTER (recurringEventId); deleting the instance we were handed only
-  // cancels today and the series returns tomorrow, which is exactly what kept
-  // happening. Nothing recurring is ever kept — today's event is always a plain
-  // one-off, so any series found here is a leftover by definition.
-  const series = new Set();
+  // Sort what was found into series (by their master id — deleting just an
+  // instance would only skip that one day) and plain one-offs. One-offs are
+  // all leftovers now: the review is always a series.
+  const series = [];
   const singles = [];
   for (const ev of existing) {
-    if (ev.recurringEventId) series.add(ev.recurringEventId);
-    else singles.push(ev);
+    if (ev.recurringEventId) {
+      if (!series.includes(ev.recurringEventId)) series.push(ev.recurringEventId);
+    } else {
+      singles.push(ev.id);
+    }
   }
-  for (const id of series) await drop(id);
+  for (const id of singles) await drop(id);
 
   if (!q1.length) {
     // Nothing urgent+important right now — clear every review event, don't nag.
-    for (const ev of singles) await drop(ev.id);
+    for (const id of series) await drop(id);
     localStorage.removeItem(DAILY_EVENT_KEY);
     return;
   }
 
-  // Keep the first one-off, delete the rest. This is the self-heal: a calendar
-  // carrying several copies collapses back to a single event on the next sync.
-  for (const ev of singles.slice(1)) await drop(ev.id);
+  // Keep one series, delete the rest. This is the self-heal: copies made by a
+  // second device, or by an older version, collapse to one on the next sync —
+  // so the same review can't pop up several times at once.
+  for (const id of series.slice(1)) await drop(id);
 
+  // PUT replaces the whole series, start date included, so it now runs from
+  // today and the days already gone drop off the calendar.
   const body = dailyEventBody(q1, today);
-  const keep = singles[0];
+  const keep = series[0];
   if (keep) {
     try {
-      await gcal('PUT', '/calendars/primary/events/' + keep.id, body);
-      localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: keep.id, date: today }));
+      await gcal('PUT', '/calendars/primary/events/' + keep, body);
+      localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: keep }));
       return;
     } catch (e) {
       if (e.message === 'expired') throw e;
@@ -479,7 +498,7 @@ async function syncDailyEvent() {
     }
   }
   const ev = await gcal('POST', '/calendars/primary/events', body);
-  localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: ev.id, date: today }));
+  localStorage.setItem(DAILY_EVENT_KEY, JSON.stringify({ id: ev.id }));
 }
 
 // Only ever one sync in flight. Two overlapping runs was the other way copies

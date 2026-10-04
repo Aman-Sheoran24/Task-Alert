@@ -51,12 +51,26 @@ const DRIVE_FOLDER_ID = '';
 
 // Your timezone, and the time of the daily review (24h clock, CAL_TIMEZONE).
 // 10 + 0 = 10:00 AM.  7 + 30 = 7:30 AM.  18 + 45 = 6:45 PM.
-// Change these, redeploy, then hit Re-sync: today's review event moves to the
-// new time in place. Editing the event inside Google Calendar does NOT stick —
-// the next sync rewrites it from here, so this is the one place to set it.
+// Change these, redeploy, then hit Re-sync: the review moves to the new time
+// in place. Editing the event inside Google Calendar does NOT stick — the next
+// sync rewrites it from here, so this is the one place to set it.
 const CAL_TIMEZONE = 'Asia/Kolkata';
-const DAILY_HOUR   = 11;   // 0-23
-const DAILY_MINUTE = 0;    // 0-59
+const DAILY_HOUR   = 10;   // 0-23
+const DAILY_MINUTE = 30;   // 0-59
+
+// How many days of review the calendar holds, counting today. Every sync
+// restarts the run from today, so earlier days drop off the calendar and only
+// this many ever show ahead. It also keeps firing on days you don't open the
+// app — up to this many; after that it stops until the next sync.
+//   1  today only   3  today + 2 days (current)   7  a week
+const DAILY_DAYS = 3;
+
+// Popups for each daily review, in minutes before its start time. One number
+// is one notification. Google allows at most 5.
+//   [0]       one popup at the start time (current)
+//   [10, 0]   10 minutes before, and at the start time
+//   []        the review shows in your calendar but never pops up
+const DAILY_REMINDERS = [0];
 
 // Popup alerts on a task's deadline event, in minutes before the deadline.
 // Empty = the deadline still appears in your calendar but never pops up.
