@@ -137,7 +137,7 @@ const WDrive = (function () {
 
   const folderFileIds = {};    // name -> id inside that folder
 
-  async function fileInFolder(name) {
+  async function findInFolder(name) {
     if (folderFileIds[name]) return folderFileIds[name];
     const parent = await folder();
     const q = encodeURIComponent(
@@ -146,12 +146,67 @@ const WDrive = (function () {
       'https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + q);
     if (list && list.files && list.files.length) {
       folderFileIds[name] = list.files[0].id;
-    } else {
-      const made = await call('POST', 'https://www.googleapis.com/drive/v3/files',
-                              { name: name, parents: [parent] });
-      folderFileIds[name] = made.id;
+      return folderFileIds[name];
     }
-    return folderFileIds[name];
+    return null;
+  }
+
+  async function fileInFolder(name) {
+    const found = await findInFolder(name);
+    if (found) return found;
+    const parent = await folder();
+    const made = await call('POST', 'https://www.googleapis.com/drive/v3/files',
+                            { name: name, parents: [parent] });
+    folderFileIds[name] = made.id;
+    return made.id;
+  }
+
+  // Everything in the folder, so a sync can tell in one request which photos
+  // are already up there rather than asking about each in turn.
+  async function listFolder() {
+    const parent = await folder();
+    const q = encodeURIComponent("trashed=false and '" + parent + "' in parents");
+    const list = await call('GET',
+      'https://www.googleapis.com/drive/v3/files?pageSize=1000&fields=files(id,name)&q=' + q);
+    return (list && list.files) || [];
+  }
+
+  // ── binary files ──────────────────────────────────────────────────────────
+  // Photos go up one file each, not inside the records. A wardrobe of
+  // twenty-five pictures is several megabytes; bundling them would mean
+  // re-sending every one on every save, where a file each is sent once.
+  async function putMedia(name, blob) {
+    if (!accessToken) throw new Error('not connected');
+    const id = await fileInFolder(name);
+    const r = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + accessToken,
+                   'Content-Type': blob.type || 'application/octet-stream' },
+        body: blob,
+      });
+    if (r.status === 401) { accessToken = null; throw new Error('expired'); }
+    if (!r.ok) throw new Error('Drive HTTP ' + r.status);
+  }
+
+  async function getMedia(name) {
+    if (!accessToken) throw new Error('not connected');
+    const id = await findInFolder(name);
+    if (!id) return null;
+    const r = await fetch(
+      'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media', {
+        headers: { Authorization: 'Bearer ' + accessToken },
+      });
+    if (r.status === 401) { accessToken = null; throw new Error('expired'); }
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    if (!blob || !blob.size) return null;
+    return await new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
   }
 
   async function readFile(name) {
@@ -218,7 +273,7 @@ const WDrive = (function () {
   }
 
   return { ready, connected, read, write, readFile, writeFile, folder, folderUrl,
-           connect, initDriveSync, onConnect: null };
+           listFolder, putMedia, getMedia, connect, initDriveSync, onConnect: null };
 })();
 
 // The GIS script calls this by name from its onload attribute.

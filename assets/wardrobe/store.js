@@ -296,16 +296,72 @@ const WStore = (function () {
     });
   }
 
+  function dataUrlToBlob(dataUrl) {
+    const comma = dataUrl.indexOf(',');
+    const head = dataUrl.slice(0, comma);
+    const mime = (head.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+    const bin = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  // Photos travel as one file each, reconciled rather than resent: whatever is
+  // referenced by an item but missing at one end is moved, and nothing else.
+  // A picture therefore crosses once, however often the records sync.
+  async function syncPhotos(onProgress) {
+    if (typeof WDrive === 'undefined' || !WDrive.connected()) return { up: 0, down: 0 };
+
+    const wanted = new Set();
+    for (const it of live(data.items)) {
+      if (it.photo_path && it.photo_path.indexOf('idb:') === 0) {
+        wanted.add(it.photo_path.slice(4));
+      }
+    }
+    if (!wanted.size) return { up: 0, down: 0 };
+
+    const remote = new Set((await WDrive.listFolder()).map(f => f.name));
+    const todo = [];
+    for (const key of wanted) {
+      const name = 'photo-' + key;
+      const here = photos.has(key);
+      const there = remote.has(name);
+      if (here && !there) todo.push({ key: key, name: name, dir: 'up' });
+      else if (!here && there) todo.push({ key: key, name: name, dir: 'down' });
+    }
+
+    let up = 0, down = 0, done = 0;
+    for (const job of todo) {
+      if (onProgress) onProgress(++done, todo.length);
+      try {
+        if (job.dir === 'up') {
+          await WDrive.putMedia(job.name, dataUrlToBlob(photos.get(job.key)));
+          up++;
+        } else {
+          const url = await WDrive.getMedia(job.name);
+          if (url) { await putPhoto(job.key, url); down++; }
+        }
+      } catch (e) {
+        if (e.message === 'expired') throw e;
+        // One photo failing should not stop the rest crossing.
+      }
+    }
+    return { up: up, down: down };
+  }
+
   // Pull before pushing, or a device that has been away overwrites whatever
   // the others did while it was gone.
-  async function syncNow() {
+  async function syncNow(onProgress) {
     if (syncing) return false;
     if (typeof WDrive === 'undefined' || !WDrive.connected()) return false;
     syncing = true;
     try {
       const changed = await pull();
       await push();
-      return changed;
+      // After the records, so a photo that has just arrived by reference is
+      // fetched in the same pass rather than waiting for the next one.
+      const moved = await syncPhotos(onProgress);
+      return changed || moved.down > 0;
     } finally {
       syncing = false;
     }
@@ -931,7 +987,8 @@ const WStore = (function () {
     listSources, addSource, setSourceActive, setRuleActive, deleteSource,
     ruleStats, activeRules,
     exportAll, exportCsv, importAll,
-    syncNow, pull, push, mergeRemote, mergeList, scheduleSync,
+    syncNow, pull, push, mergeRemote, mergeList, scheduleSync, syncPhotos,
+    dataUrlToBlob,
     raw: () => data, today,
   };
 })();

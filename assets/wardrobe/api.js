@@ -576,7 +576,8 @@
   if (typeof WDrive !== 'undefined') {
     WDrive.onConnect = () => {
       chip('Syncing…');
-      WStore.syncNow().then(async (changed) => {
+      WStore.syncNow((n, total) => chip('Syncing photos ' + n + '/' + total))
+        .then(async (changed) => {
         if (changed && typeof window.reloadWardrobeViews === 'function') {
           window.reloadWardrobeViews();
         }
