@@ -5,29 +5,9 @@
    dance, the Drive and Calendar REST helpers, the daily review event, and
    the small utilities (esc, pad, todayStr, flash) used across the app.
    Loads first: the feature scripts call into this, not the other way round. */
-/* ════════════════════════════════════════════════════════════════════════════
-   CONFIG — edit these three lines, then deploy.
-   ──────────────────────────────────────────────────────────────────────────── */
-
-// Paste the OAuth Client ID you create in Google Cloud (see README). NOT a secret.
-const GOOGLE_CLIENT_ID = '574004484248-974don3f0deh34qfufuaupt77dg1lq06.apps.googleusercontent.com';
-
-// Your timezone, and the time of the daily review (24h clock, CAL_TIMEZONE).
-// 10 + 0 = 10:00 AM.  7 + 30 = 7:30 AM.  18 + 45 = 6:45 PM.
-// Change these, redeploy, then hit Re-sync: today's review event moves to the
-// new time in place. Editing the event inside Google Calendar does NOT stick —
-// the next sync rewrites it from here, so this is the one place to set it.
-const CAL_TIMEZONE = 'Asia/Kolkata';
-const DAILY_HOUR   = 11;   // 0-23
-const DAILY_MINUTE = 0;    // 0-59
-
-// Popup alerts on a task's deadline event, in minutes before the deadline.
-// Empty = the deadline still appears in your calendar but never pops up.
-//   []          no alerts        (current)
-//   [0]         at the deadline
-//   [300, 120]  5 hours and 2 hours before
-// Edit this list — do not comment the line out, taskEventBody() reads it.
-const DEADLINE_REMINDERS = [];
+/* Settings live in assets/core/config.js, which loads before this and is
+   shared with wardrobe.html — one copy of the client id and the scope list,
+   so the two pages cannot ask Google for different things. */
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 
@@ -49,7 +29,6 @@ let syncTimer     = null;
 // "Remember me" state. Once you've connected on this device, we stash a flag and
 // then try to get fresh tokens SILENTLY (no popup, no consent screen) on every
 // later visit. Google only re-prompts if your Google session itself has lapsed.
-const GCAL_REMEMBER_KEY     = 'tm_gcal_remember';
 let   silentReauth          = false;   // a silent (prompt:'') request is in flight
 let   suppressSyncOnToken   = false;   // token arrived from a background refresh only
 let   refreshTimer          = null;    // periodic silent-refresh interval
@@ -67,14 +46,7 @@ function initGis() {
   }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    // calendar.events = create/update reminder events; drive.appdata = a hidden,
-    // app-private file in the user's Drive that holds the task list (cross-device sync);
-    // drive.file = create the Work Documentation folders and Docs. drive.file is the
-    // narrow one: it reaches only files this app itself created, never the rest of
-    // your Drive. Adding it means Google shows the consent screen once more.
-    scope: 'https://www.googleapis.com/auth/calendar.events ' +
-           'https://www.googleapis.com/auth/drive.appdata ' +
-           'https://www.googleapis.com/auth/drive.file',
+    scope: GOOGLE_SCOPES,
     callback: (resp) => {
       if (resp && resp.access_token) {
         accessToken   = resp.access_token;

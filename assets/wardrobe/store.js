@@ -127,10 +127,22 @@ const WStore = (function () {
 
   function save() {
     localStorage.setItem(KEY, JSON.stringify(data));
-    if (typeof window.onWardrobeSaved === 'function') window.onWardrobeSaved();
+    scheduleSync();
   }
 
-  const nextId = () => data.seq++;
+  // Ids have to be unique across devices, not just within one. A counter from
+  // 1 gives both your laptop and your phone an item 1, and merging them would
+  // silently fold two garments into one — and misdirect the wear records
+  // pointing at them. Time plus a per-tick counter collides only if two
+  // devices create a record in the same millisecond at the same point in that
+  // millisecond's sequence. Well inside Number's safe integer range.
+  let tick = 0;
+  function nextId() {
+    tick = (tick + 1) % 1000;
+    const id = Date.now() * 1000 + tick;
+    data.seq = Math.max(data.seq || 1, id + 1);
+    return id;
+  }
   const today = () => {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -188,6 +200,84 @@ const WStore = (function () {
       tx.objectStore('photos').delete(String(key));
       tx.oncomplete = resolve; tx.onerror = resolve;
     });
+  }
+
+  // ── Drive sync ─────────────────────────────────────────────────────────────
+  // The same hidden appData folder the task list uses, in a file of its own.
+  // Records merge by id with the newest write winning, and deletions are
+  // tombstones rather than removals, so a delete on one device reaches the
+  // others instead of the record reappearing from their copy.
+  const SYNC_FILE = 'wardrobe.json';
+  const COLLECTIONS = ['items', 'wears', 'outfits', 'rules', 'sources'];
+  let syncTimer = null;
+  let syncing = false;
+
+  const stamp = (r) => Date.parse(r && r.updated_at || 0) || 0;
+
+  function mergeList(mine, theirs) {
+    const by = new Map();
+    for (const rec of (mine || []).concat(theirs || [])) {
+      if (!rec || rec.id === undefined || rec.id === null) continue;
+      const prev = by.get(rec.id);
+      if (!prev || stamp(rec) >= stamp(prev)) by.set(rec.id, rec);
+    }
+    return Array.from(by.values());
+  }
+
+  function mergeRemote(remote) {
+    if (!remote || typeof remote !== 'object') return false;
+    let changed = false;
+    for (const name of COLLECTIONS) {
+      const before = JSON.stringify(data[name] || []);
+      data[name] = mergeList(data[name], remote[name]);
+      if (JSON.stringify(data[name]) !== before) changed = true;
+    }
+    // Keep the counter ahead of anything that arrived, so a device that was
+    // offline does not start handing out ids another one already used.
+    for (const name of COLLECTIONS) {
+      for (const rec of data[name]) {
+        if (typeof rec.id === 'number') data.seq = Math.max(data.seq || 1, rec.id + 1);
+      }
+    }
+    if (changed) localStorage.setItem(KEY, JSON.stringify(data));
+    return changed;
+  }
+
+  async function pull() {
+    if (typeof WDrive === 'undefined' || !WDrive.connected()) return false;
+    const remote = await WDrive.read(SYNC_FILE);
+    return mergeRemote(remote);
+  }
+
+  async function push() {
+    if (typeof WDrive === 'undefined' || !WDrive.connected()) return;
+    await WDrive.write(SYNC_FILE, {
+      schema: 1, updated_at: new Date().toISOString(),
+      items: data.items, wears: data.wears, outfits: data.outfits,
+      rules: data.rules, sources: data.sources,
+    });
+  }
+
+  // Pull before pushing, or a device that has been away overwrites whatever
+  // the others did while it was gone.
+  async function syncNow() {
+    if (syncing) return false;
+    if (typeof WDrive === 'undefined' || !WDrive.connected()) return false;
+    syncing = true;
+    try {
+      const changed = await pull();
+      await push();
+      return changed;
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function scheduleSync() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      syncNow().catch(() => { /* a failed sync must not break the page */ });
+    }, 1500);
   }
 
   // ── items ──────────────────────────────────────────────────────────────────
@@ -803,6 +893,7 @@ const WStore = (function () {
     listSources, addSource, setSourceActive, setRuleActive, deleteSource,
     ruleStats, activeRules,
     exportAll, exportCsv, importAll,
+    syncNow, pull, push, mergeRemote, mergeList, scheduleSync,
     raw: () => data, today,
   };
 })();

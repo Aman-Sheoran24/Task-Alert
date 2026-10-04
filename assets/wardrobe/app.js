@@ -123,6 +123,13 @@ function thumb(it, big) {
 
 const selectedItems = new Set();
 
+/* Called when a sync brings in something from another device, so the
+   screen you are looking at updates instead of showing a stale list. */
+window.reloadWardrobeViews = function () {
+  try { loadCloset(); } catch (_) { /* not on that tab */ }
+  try { if (typeof loadOutfits === 'function') loadOutfits(); } catch (_) {}
+};
+
 function itemCard(it) {
   const picked = selectedItems.has(String(it.id));
   return `<div class="card tile-card${picked ? ' picked' : ''}" data-id="${it.id}"

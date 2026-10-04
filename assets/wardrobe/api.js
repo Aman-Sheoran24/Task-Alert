@@ -556,6 +556,30 @@
   });
 
   // Photos must be in memory before the first render, or items would paint
-  // without them and only appear after some later refresh.
-  window.wardrobeReady = WStore.loadPhotos();
+  // without them and only appear after some later refresh. The same applies to
+  // anything another device has added, so the first pull is waited for too —
+  // but only briefly, because a page that will not render until Drive answers
+  // is worse than one that fills in a moment later.
+  window.wardrobeReady = (async () => {
+    await WStore.loadPhotos();
+    if (typeof WDrive === 'undefined') return;
+    const connected = await Promise.race([
+      WDrive.ready,
+      new Promise((r) => setTimeout(() => r(false), 4000)),
+    ]);
+    if (!connected) return;
+    try { await WStore.pull(); } catch (_) { /* local copy still works */ }
+  })();
+
+  // A token can arrive after the page has already painted. Pull then too, and
+  // redraw if anything came back.
+  if (typeof WDrive !== 'undefined') {
+    WDrive.onConnect = () => {
+      WStore.syncNow().then((changed) => {
+        if (changed && typeof window.reloadWardrobeViews === 'function') {
+          window.reloadWardrobeViews();
+        }
+      }).catch(() => { /* nothing to show for a failed sync */ });
+    };
+  }
 })();
